@@ -1,0 +1,36 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": {
+      "value": "eastus"
+    },
+    "cosmosLocation": {
+      "value": "eastus2"
+    },
+    "namePrefix": {
+      "value": "mod07"
+    },
+    "publisherEmail": {
+      "value": "hsouza.eduardo@gmail.com"
+    },
+    "publisherName": {
+      "value": "Mod07 Lab"
+    },
+    "apimSku": {
+      "value": "Consumption"
+    },
+    "queueName": {
+      "value": "mod07-msgjourney"
+    },
+    "blobContainerName": {
+      "value": "messages"
+    },
+    "cosmosDatabaseName": {
+      "value": "mod07"
+    },
+    "cosmosContainerName": {
+      "value": "pedidos"
+    }
+  }
+}

@@ -1,0 +1,17 @@
+// =====================================================================
+// 07 - Saude das Functions (volume, latencia, taxa de falha)
+// =====================================================================
+// Visao por componente (cloud_RoleName = nome da Function App) e por
+// operacao. p95 alto no Producer aponta gargalo no envio; no Consumer,
+// no processamento/gravacao.
+// ---------------------------------------------------------------------
+AppRequests
+| where TimeGenerated > ago(1h)
+| summarize
+    total   = count(),
+    falhas  = countif(Success == false),
+    p50Ms   = round(percentile(DurationMs, 50), 1),
+    p95Ms   = round(percentile(DurationMs, 95), 1)
+    by componente = AppRoleName, operacao = OperationName
+| extend taxaFalhaPct = round(100.0 * falhas / total, 2)
+| order by total desc

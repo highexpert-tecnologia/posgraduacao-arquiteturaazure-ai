@@ -1,0 +1,82 @@
+# =============================================================================
+# Mod07 - Lab de Observabilidade :: pipeline de INFRA (somente Bicep)
+# Provisiona toda a infra self-contained no resource group informado.
+# NAO faz build/publish do codigo das Functions (isso e feito a parte com `func publish`).
+# =============================================================================
+
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - POSGraducao/Mod07/infra/*
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  # >>> Ajuste estes valores para o seu ambiente <<<
+  azureServiceConnection: 'sc-azure-aiexpert'   # nome da Service Connection (ARM) no Azure DevOps
+  resourceGroupName: 'rg-mod07-lab'             # RG alvo (sera criado se nao existir)
+  location: 'eastus'
+  templateFile: 'POSGraducao/Mod07/infra/main.bicep'
+  parametersFile: 'POSGraducao/Mod07/infra/main.parameters.json'
+
+stages:
+  - stage: Validate
+    displayName: 'Validate + What-If'
+    jobs:
+      - job: validate
+        displayName: 'Validar template'
+        steps:
+          - checkout: self
+          - task: AzureCLI@2
+            displayName: 'az group create + validate + what-if'
+            inputs:
+              azureSubscription: '$(azureServiceConnection)'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                set -euo pipefail
+                az group create -n "$(resourceGroupName)" -l "$(location)" -o none
+                echo "== Validate =="
+                az deployment group validate \
+                  -g "$(resourceGroupName)" \
+                  -f "$(templateFile)" \
+                  -p "$(parametersFile)" \
+                  -o none
+                echo "== What-If =="
+                az deployment group what-if \
+                  -g "$(resourceGroupName)" \
+                  -f "$(templateFile)" \
+                  -p "$(parametersFile)"
+
+  - stage: Deploy
+    displayName: 'Deploy infra'
+    dependsOn: Validate
+    condition: succeeded()
+    jobs:
+      - deployment: deployInfra
+        displayName: 'Deploy Bicep'
+        environment: 'mod07-lab'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                - task: AzureCLI@2
+                  displayName: 'az deployment group create'
+                  inputs:
+                    azureSubscription: '$(azureServiceConnection)'
+                    scriptType: 'bash'
+                    scriptLocation: 'inlineScript'
+                    inlineScript: |
+                      set -euo pipefail
+                      az deployment group create \
+                        -g "$(resourceGroupName)" \
+                        -n "mod07-$(Build.BuildId)" \
+                        -f "$(templateFile)" \
+                        -p "$(parametersFile)" \
+                        -o json \
+                        --query "properties.outputs"

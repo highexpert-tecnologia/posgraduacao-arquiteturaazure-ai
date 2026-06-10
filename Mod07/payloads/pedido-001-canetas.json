@@ -1,0 +1,10 @@
+{
+  "orderId": "PO-2026-0001",
+  "requester": "Maria Santos",
+  "costCenter": "TI-Infra",
+  "currency": "BRL",
+  "items": [
+    { "sku": "CAN-AZ-001", "name": "Caneta esferografica azul", "quantity": 100, "unitPrice": 1.50 },
+    { "sku": "CAN-PR-002", "name": "Caneta esferografica preta", "quantity": 100, "unitPrice": 1.50 }
+  ]
+}

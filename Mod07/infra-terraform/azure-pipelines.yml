@@ -1,0 +1,137 @@
+# =============================================================================
+# Mod07 - Lab de Observabilidade :: pipeline TERRAFORM (somente infra)
+# init (backend azurerm) -> plan (artefato) -> apply (com aprovacao no Environment).
+# NAO faz build/publish das Functions (isso e feito a parte com `func publish`).
+#
+# Requisitos:
+#   - Service Connection ARM (azureSubscription) no Azure DevOps.
+#   - terraform ja vem instalado nos agents Microsoft-hosted ubuntu-latest.
+#   - Suporta SPN com secret OU Workload Identity Federation (OIDC).
+# =============================================================================
+
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - POSGraducao/Mod07/terraform/*
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  # >>> Ajuste para o seu ambiente <<<
+  azureServiceConnection: 'sc-azure-aiexpert'    # Service Connection (ARM)
+  workingDir: 'POSGraducao/Mod07/terraform'
+  # Backend de state (Azure Storage). Sera criado se nao existir.
+  backendResourceGroup: 'rg-tfstate'
+  backendLocation: 'eastus'
+  backendStorageAccount: 'sttfstatemod07'        # 3-24, minusculas/numeros, GLOBALMENTE unico
+  backendContainer: 'tfstate'
+  backendKey: 'mod07-lab.tfstate'
+
+stages:
+  - stage: Plan
+    displayName: 'Terraform Plan'
+    jobs:
+      - job: plan
+        displayName: 'init + validate + plan'
+        steps:
+          - checkout: self
+          - task: AzureCLI@2
+            displayName: 'terraform init + validate + plan'
+            inputs:
+              azureSubscription: '$(azureServiceConnection)'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              addSpnToEnvironment: true
+              workingDirectory: '$(workingDir)'
+              inlineScript: |
+                set -euo pipefail
+
+                # ---- Auth do provider azurerm a partir da Service Connection ----
+                export ARM_SUBSCRIPTION_ID="$(az account show --query id -o tsv)"
+                export ARM_TENANT_ID="$tenantId"
+                export ARM_CLIENT_ID="$servicePrincipalId"
+                if [ -n "${servicePrincipalKey:-}" ]; then
+                  export ARM_CLIENT_SECRET="$servicePrincipalKey"   # SPN com secret
+                else
+                  export ARM_USE_OIDC="true"                        # Workload Identity Federation
+                  export ARM_OIDC_TOKEN="$idToken"
+                fi
+
+                # ---- Garante o storage de state (idempotente) ----
+                az group create -n "$(backendResourceGroup)" -l "$(backendLocation)" -o none
+                az storage account create -n "$(backendStorageAccount)" -g "$(backendResourceGroup)" \
+                  -l "$(backendLocation)" --sku Standard_LRS --min-tls-version TLS1_2 -o none 2>/dev/null || true
+                az storage container create -n "$(backendContainer)" \
+                  --account-name "$(backendStorageAccount)" --auth-mode login -o none
+
+                # ---- Terraform ----
+                terraform init \
+                  -backend-config="resource_group_name=$(backendResourceGroup)" \
+                  -backend-config="storage_account_name=$(backendStorageAccount)" \
+                  -backend-config="container_name=$(backendContainer)" \
+                  -backend-config="key=$(backendKey)"
+
+                terraform fmt -check -recursive || echo "##vso[task.logissue type=warning]terraform fmt: rode 'terraform fmt' para padronizar a formatacao"
+                terraform validate
+                terraform plan -input=false -out=tfplan
+
+          - task: CopyFiles@2
+            displayName: 'Stage do plano + codigo'
+            inputs:
+              SourceFolder: '$(workingDir)'
+              Contents: |
+                **/*
+                !.terraform/**
+              TargetFolder: '$(Build.ArtifactStagingDirectory)/tf'
+
+          - publish: '$(Build.ArtifactStagingDirectory)/tf'
+            artifact: tfplan
+            displayName: 'Publica artefato tfplan'
+
+  - stage: Apply
+    displayName: 'Terraform Apply'
+    dependsOn: Plan
+    condition: succeeded()
+    jobs:
+      - deployment: apply
+        displayName: 'terraform apply'
+        environment: 'mod07-lab'   # configure aprovacao manual neste Environment
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - download: current
+                  artifact: tfplan
+                - task: AzureCLI@2
+                  displayName: 'terraform init + apply tfplan'
+                  inputs:
+                    azureSubscription: '$(azureServiceConnection)'
+                    scriptType: 'bash'
+                    scriptLocation: 'inlineScript'
+                    addSpnToEnvironment: true
+                    workingDirectory: '$(Pipeline.Workspace)/tfplan'
+                    inlineScript: |
+                      set -euo pipefail
+
+                      export ARM_SUBSCRIPTION_ID="$(az account show --query id -o tsv)"
+                      export ARM_TENANT_ID="$tenantId"
+                      export ARM_CLIENT_ID="$servicePrincipalId"
+                      if [ -n "${servicePrincipalKey:-}" ]; then
+                        export ARM_CLIENT_SECRET="$servicePrincipalKey"
+                      else
+                        export ARM_USE_OIDC="true"
+                        export ARM_OIDC_TOKEN="$idToken"
+                      fi
+
+                      terraform init \
+                        -backend-config="resource_group_name=$(backendResourceGroup)" \
+                        -backend-config="storage_account_name=$(backendStorageAccount)" \
+                        -backend-config="container_name=$(backendContainer)" \
+                        -backend-config="key=$(backendKey)"
+
+                      terraform apply -input=false tfplan
+                      terraform output

@@ -1,0 +1,24 @@
+[
+  {
+    "name": "ProcessMessage",
+    "scriptFile": "consumer.dll",
+    "entryPoint": "Mod07.Consumer.ProcessMessageFunction.Run",
+    "language": "dotnet-isolated",
+    "properties": {
+      "IsCodeless": false
+    },
+    "bindings": [
+      {
+        "name": "message",
+        "direction": "In",
+        "type": "serviceBusTrigger",
+        "queueName": "%QUEUE_NAME%",
+        "connection": "ServiceBusConnection",
+        "cardinality": "One",
+        "properties": {
+          "supportsDeferredBinding": "True"
+        }
+      }
+    ]
+  }
+]

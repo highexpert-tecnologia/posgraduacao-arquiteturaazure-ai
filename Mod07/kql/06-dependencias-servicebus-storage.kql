@@ -1,0 +1,19 @@
+// =====================================================================
+// 06 - Dependencias externas: Service Bus, Storage e Cosmos DB
+// =====================================================================
+// Latencia e taxa de erro das chamadas que o Producer/Consumer fazem
+// para Service Bus (envio), Blob Storage (gravacao) e Cosmos DB (upsert).
+// Auto-instrumentado pelos SDKs Azure quando o App Insights esta ligado.
+// ---------------------------------------------------------------------
+AppDependencies
+| where TimeGenerated > ago(1h)
+| where Type has_any ("Azure Service Bus", "Queue", "ServiceBus", "Azure DocumentDB", "Cosmos")
+     or Target has_any ("servicebus", "blob", "queue", "documents.azure.com", "cosmos")
+     or Name has_any ("ServiceBus", "Blob", "messages", "mod07", "pedidos", "Upsert")
+| summarize
+    chamadas = count(),
+    mediaMs  = round(avg(DurationMs), 1),
+    p95Ms    = round(percentile(DurationMs, 95), 1),
+    falhas   = countif(Success == false)
+    by tipo = Type, alvo = Target, operacao = Name, componente = AppRoleName
+| order by chamadas desc

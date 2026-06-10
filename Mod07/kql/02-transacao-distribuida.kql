@@ -1,0 +1,40 @@
+// =====================================================================
+// 02 - Transacao distribuida (trace W3C) por operation_Id
+// =====================================================================
+// A partir de um messageId, descobre o(s) operation_Id da jornada e
+// reune TODO o trace distribuido - inclusive itens sem o customDimension
+// messageId (ex.: a request de entrada no APIM e dependencias do SDK).
+// E a visao mais proxima do "End-to-end transaction" do portal.
+// ---------------------------------------------------------------------
+let msgId = "COLOQUE_O_MESSAGEID_AQUI";
+union isfuzzy=true withsource=Tabela
+    AppRequests,
+    AppDependencies,
+    AppTraces,
+    AppExceptions,
+    AppEvents
+| join kind=inner (
+    union isfuzzy=true
+        AppEvents,
+        AppRequests,
+        AppDependencies
+    | extend props = todynamic(Properties)
+    | extend messageId = tostring(props.messageId)
+    | where messageId == msgId
+    | distinct OperationId
+) on OperationId
+| project
+    TimeGenerated,
+    Tabela,
+    sinal = coalesce(
+        tostring(column_ifexists("Name", "")),
+        tostring(column_ifexists("Type", "")),
+        tostring(column_ifexists("Message", ""))
+    ),
+    operacao = column_ifexists("OperationName", ""),
+    componente = column_ifexists("AppRoleName", ""),
+    OperationId,
+    ParentId = column_ifexists("ParentId", ""),
+    duracaoMs = column_ifexists("DurationMs", real(null)),
+    sucesso = column_ifexists("Success", bool(null))
+| order by TimeGenerated asc

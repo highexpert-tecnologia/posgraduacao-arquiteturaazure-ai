@@ -1,0 +1,13 @@
+{
+  "orderId": "PO-2026-0004",
+  "requester": "Henrique Souza",
+  "costCenter": "TI-Infra",
+  "currency": "BRL",
+  "items": [
+    { "sku": "CAN-AZ-001", "name": "Caneta esferografica azul", "quantity": 50, "unitPrice": 1.50 },
+    { "sku": "PAP-A4-500", "name": "Papel sulfite A4 (resma 500fl)", "quantity": 20, "unitPrice": 24.90 },
+    { "sku": "TEC-ABNT2", "name": "Teclado USB ABNT2", "quantity": 5, "unitPrice": 89.90 },
+    { "sku": "MOU-OPT-USB", "name": "Mouse optico USB", "quantity": 5, "unitPrice": 39.90 },
+    { "sku": "CCA-CER-350", "name": "Caneca ceramica 350ml", "quantity": 10, "unitPrice": 19.90 }
+  ]
+}

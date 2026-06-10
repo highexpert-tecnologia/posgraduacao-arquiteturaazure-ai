@@ -1,0 +1,12 @@
+// =====================================================================
+// 05 - Volume e throughput da jornada (timechart)
+// =====================================================================
+// Contagem por minuto de cada estagio. Se as 3 linhas andam juntas, o
+// pipeline esta saudavel; divergencia entre MessageSent e BlobWritten
+// indica acumulo na fila ou falha no Consumer.
+// ---------------------------------------------------------------------
+AppEvents
+| where TimeGenerated > ago(1h)
+| where Name in ("MessageSent", "MessageReceived", "BlobWritten", "CosmosDocWritten")
+| summarize contagem = count() by bin(TimeGenerated, 1m), estagio = Name
+| render timechart

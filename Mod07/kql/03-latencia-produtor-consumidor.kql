@@ -1,0 +1,38 @@
+// =====================================================================
+// 03 - Latencia Produtor -> Consumidor (tempo na fila + processamento)
+// =====================================================================
+// Para cada mensagem, mede o tempo entre o evento MessageSent (Producer)
+// e o MessageReceived (Consumer). Bom para enxergar atraso/backlog na fila.
+// ---------------------------------------------------------------------
+let msgId = "5c8412d593394ef4895324ab28a00f4a";
+union isfuzzy=true withsource=Tabela
+    AppRequests,
+    AppDependencies,
+    AppTraces,
+    AppExceptions,
+    AppEvents
+| join kind=inner (
+    union isfuzzy=true
+        AppEvents,
+        AppRequests,
+        AppDependencies
+    | extend props = todynamic(Properties)
+    | extend messageId = tostring(props.messageId)
+    | where messageId == msgId
+    | distinct OperationId
+) on OperationId
+| project
+    TimeGenerated,
+    Tabela,
+    sinal = coalesce(
+        tostring(column_ifexists("Name", "")),
+        tostring(column_ifexists("Type", "")),
+        tostring(column_ifexists("Message", ""))
+    ),
+    operacao = column_ifexists("OperationName", ""),
+    componente = column_ifexists("AppRoleName", ""),
+    OperationId,
+    ParentId = column_ifexists("ParentId", ""),
+    duracaoMs = column_ifexists("DurationMs", real(null)),
+    sucesso = column_ifexists("Success", bool(null))
+| order by TimeGenerated asc

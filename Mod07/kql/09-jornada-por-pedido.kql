@@ -1,0 +1,34 @@
+// =====================================================================
+// 09 - Jornada de UM PEDIDO de compra (correlacao por correlationId)
+// =====================================================================
+// Visao de NEGOCIO: segue um pedido inteiro (orderId = correlationId)
+// por todos os estagios e por TODAS as suas mensagens. Diferente da 01
+// (que e por messageId tecnico), aqui um mesmo pedido reenviado aparece
+// agrupado. Troque o valor por um orderId (ex.: "PO-2026-0004").
+// Executar em: Application Insights 'appi-mod07-aiexpert' > Logs
+// ---------------------------------------------------------------------
+let pedido = "PO-2026-0004";
+union withsource=Tabela AppEvents, AppRequests, AppDependencies, AppTraces, AppExceptions
+| extend props = todynamic(Properties)
+| extend correlationId = tostring(props.correlationId)
+| extend messageId     = tostring(props.messageId)
+| where correlationId == pedido
+| project
+    timestamp     = TimeGenerated,
+    Tabela,
+    sinal         = coalesce(Name, Type, Message),
+    componente    = AppRoleName,
+    correlationId,
+    messageId,
+    itemCount     = tostring(props.itemCount),
+    totalAmount   = tostring(props.totalAmount),
+    operation_Id  = OperationId,
+    duracaoMs     = DurationMs,
+    sucesso       = Success
+| order by timestamp asc
+
+// Resumo do funil DESTE pedido (descomente, mantendo o 'let pedido' no mesmo bloco):
+// AppEvents
+// | extend correlationId = tostring(todynamic(Properties).correlationId)
+// | where correlationId == pedido
+// | summarize estagios = make_set(Name), mensagens = dcount(tostring(todynamic(Properties).messageId))

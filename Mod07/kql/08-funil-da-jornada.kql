@@ -1,0 +1,26 @@
+// =====================================================================
+// 08 - Funil da jornada (quantas mensagens chegam em cada estagio)
+// =====================================================================
+// Conta mensagens DISTINTAS em cada estagio nas ultimas 24h. O ideal e
+// MessageSent == MessageReceived == BlobWritten. Qualquer queda revela
+// onde a mensagem se perdeu.
+// ---------------------------------------------------------------------
+let janela = 24h;
+AppEvents
+| where TimeGenerated > ago(janela)
+| where Name in ("MessageSent", "MessageReceived", "BlobWritten", "CosmosDocWritten")
+| extend messageId = tostring(todynamic(Properties).messageId)
+| summarize mensagens = dcount(messageId) by estagio = Name
+// ordem logica da jornada (em vez de so por contagem)
+| extend ordem = case(estagio == "MessageSent", 1,
+                      estagio == "MessageReceived", 2,
+                      estagio == "BlobWritten", 3,
+                      estagio == "CosmosDocWritten", 4, 9)
+| order by ordem asc
+
+// Para detectar mensagens "presas" (enviadas mas nao gravadas):
+// AppEvents
+// | where TimeGenerated > ago(24h) and Name in ("MessageSent","BlobWritten")
+// | extend messageId = tostring(todynamic(Properties).messageId)
+// | summarize estagios = make_set(Name) by messageId
+// | where not(set_has_element(estagios, "BlobWritten"))

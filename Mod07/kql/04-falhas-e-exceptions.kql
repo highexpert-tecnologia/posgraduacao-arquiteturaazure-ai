@@ -1,0 +1,19 @@
+// =====================================================================
+// 04 - Falhas e excecoes na jornada
+// =====================================================================
+// Junta exceptions (Producer/Consumer) com requests que falharam.
+// Use para diagnosticar mensagens que caem em retry / dead-letter.
+// ---------------------------------------------------------------------
+union withsource=Tabela
+    AppExceptions,
+    (AppRequests | where Success == false)
+| extend messageId = tostring(todynamic(Properties).messageId)
+| project
+    timestamp    = TimeGenerated,
+    Tabela,
+    tipo         = coalesce(Type, "FailedRequest"),
+    detalhe      = coalesce(OuterMessage, Name),
+    componente   = AppRoleName,
+    messageId,
+    operation_Id = OperationId
+| order by timestamp desc

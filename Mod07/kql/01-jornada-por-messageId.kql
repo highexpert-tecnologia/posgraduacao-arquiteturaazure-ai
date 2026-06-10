@@ -1,0 +1,31 @@
+// =====================================================================
+// 01 - Jornada completa de UMA mensagem (correlacao por messageId)
+// =====================================================================
+// Mostra, em ordem cronologica, TODOS os sinais de telemetria de uma
+// unica mensagem atravessando: APIM -> Producer -> Service Bus -> Consumer -> Storage.
+// Troque o valor de msgId pelo retornado na resposta do POST /mod07/send.
+// Executar em: Application Insights 'appi-mod07-aiexpert' > Logs
+// ---------------------------------------------------------------------
+let msgId = "COLOQUE_O_MESSAGEID_AQUI";
+let msgId = "5c8412d593394ef4895324ab28a00f4a";
+union withsource=Tabela
+    AppEvents,
+    AppRequests,
+    AppDependencies,
+    AppTraces,
+    AppExceptions
+| extend messageId = tostring(Properties.messageId)
+| extend correlationId = tostring(Properties.correlationId)
+| where messageId == msgId
+| project
+    TimeGenerated,
+    Tabela,
+    sinal = coalesce(Name, Type, Message),
+    operacao = OperationName,
+    componente = AppRoleName,
+    OperationId,
+    correlationId,
+    duracaoMs = DurationMs,
+    sucesso = Success,
+    messageId
+| order by TimeGenerated asc

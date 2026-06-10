@@ -1,0 +1,23 @@
+# Segredos / configuração local
+.env
+.env.local
+*.env
+!*.env.example
+local.settings.json
+
+# .NET
+bin/
+obj/
+*.user
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Node
+node_modules/
+
+# Azure Functions
+.azure/
