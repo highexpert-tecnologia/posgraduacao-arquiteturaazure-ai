@@ -224,7 +224,7 @@ git clone https://github.com/highexpert-tecnologia/posgraduacao-arquiteturaazure
 Agora entre na pasta do projeto:
 
 ```powershell
-cd Terraform-Pos
+cd Disciplina-5-DevOps-CloudNative
 ```
 
 Abra o VSCode
