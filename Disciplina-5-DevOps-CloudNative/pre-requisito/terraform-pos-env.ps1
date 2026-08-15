@@ -10,7 +10,6 @@ $packages = @(
     @{ Id = "GitHub.cli" },
     @{ Id = "Microsoft.VisualStudioCode" },
     @{ Id = "Microsoft.DotNet.SDK.10" },
-    @{ Id = "Microsoft.Powershell" },
     @{ Id = "JanDeDobbeleer.OhMyPosh" },
     @{ Id = "Hashicorp.Terraform" },
     @{ Id = "Microsoft.AzureCLI" }
