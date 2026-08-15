@@ -1,0 +1,68 @@
+name: Azure Container Apps Deploy Summary
+description: Writes a deployment summary to the GitHub job summary
+
+inputs:
+  tag_version:
+    description: 'Image tag version deployed'
+    required: true
+  now:
+    description: 'Deployment timestamp'
+    required: true
+  environment:
+    description: 'Deployment environment'
+    required: true
+  aca_name:
+    description: 'Azure Container App name'
+    required: true
+  acae_name:
+    description: 'Azure Container App Environment name'
+    required: true
+  rg_name:
+    description: 'Azure Resource Group name'
+    required: true
+  fqdn:
+    description: 'Container App FQDN'
+    required: true
+  state:
+    description: 'Container App running status'
+    required: true
+  msg:
+    description: 'Custom message to display in summary'
+    required: false
+    default: ''
+
+runs:
+  using: 'composite'
+  steps:
+    - name: 📝 Write deployment summary
+      shell: bash
+      run: |
+        cat >> "$GITHUB_STEP_SUMMARY" << EOF
+        # 🚀 Deploy to Azure Container App
+
+        | Campo | Valor |
+        |-------|-------|
+        | Versão | \`${{ inputs.tag_version }}\` |
+        | Data | ${{ inputs.now }} |
+        | Environment | ${{ inputs.environment }} |
+        | Container App | \`${{ inputs.aca_name }}\` |
+        | Container App Environment | \`${{ inputs.acae_name }}\` |
+        | Resource Group | \`${{ inputs.rg_name }}\` |
+        | FQDN | ${{ inputs.fqdn }} |
+        | Estado | ${{ inputs.state }} |
+        | URL da API | https://${{ inputs.fqdn }} |
+
+        ## 🔗 Links Úteis
+        - **Health Check**: https://${{ inputs.fqdn }}/health/live
+        - **Swagger UI**: https://${{ inputs.fqdn }}/swagger
+
+        ## ✅ Deploy Status
+        - ✅ Imagem Docker publicada no GHCR
+        - ✅ Deploy realizado com sucesso
+        - ✅ Aplicação disponível na URL acima
+        EOF
+
+        if [ -n "${{ inputs.msg }}" ]; then
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "> ${{ inputs.msg }}" >> "$GITHUB_STEP_SUMMARY"
+        fi

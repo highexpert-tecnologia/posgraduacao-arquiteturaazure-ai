@@ -1,0 +1,152 @@
+﻿name: WFC .NET API — Deploy to Azure Container Apps ☁️
+run-name: "${{ github.actor }} - ${{ github.run_id }}"
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        type: string
+        description: 'Deployment environment (development, staging, production)'
+        required: true
+      tag_version:
+        type: string
+        description: 'Image tag version to deploy (e.g. 1.0.0)'
+        required: true
+      image_name:
+        type: string
+        description: 'Image name used in GHCR (e.g. usuariosapi)'
+        required: true
+      registry:
+        type: string
+        description: 'Container registry URL (e.g. ghcr.io, docker.io, myacr.azurecr.io)'
+        required: false
+        default: 'ghcr.io'
+      registry_username:
+        type: string
+        description: 'Registry username. Defaults to github.actor when empty (suitable for ghcr.io)'
+        required: false
+        default: ''
+      registry_identity:
+        type: string
+        description: 'Resource ID of the user-assigned identity used to pull images from ACR'
+        required: true
+      acae_base_name:
+        type: string
+        description: 'Base Container App Environment name (e.g. cae-myorg)'
+        required: true
+      health_check_path:
+        type: string
+        description: 'HTTP path for post-deploy health check'
+        required: false
+        default: '/health/live'
+      deploy_poll_max_attempts:
+        type: string
+        description: 'Max polling attempts for revision readiness and health check'
+        required: false
+        default: '20'
+      deploy_poll_interval_seconds:
+        type: string
+        description: 'Seconds between polling attempts'
+        required: false
+        default: '15'
+    secrets:
+      AZURE_CLIENT_ID:
+        required: true
+        description: 'Azure Client ID for OIDC authentication'
+      AZURE_TENANT_ID:
+        required: true
+        description: 'Azure Tenant ID for OIDC authentication'
+      AZURE_SUBSCRIPTION_ID:
+        required: true
+        description: 'Azure Subscription ID for OIDC authentication'
+
+env:
+  # Colors for output
+  RED: '\033[0;31m'
+  GREEN: '\033[0;32m'
+  YELLOW: '\033[0;33m'
+  BLUE: '\033[0;34m'
+  RESET: '\033[0m'
+  BOLD: '\033[1m'
+
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  deploy_aca:
+    name: Deploy to Azure Container Apps
+    environment: ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      id-token: write
+      contents: read
+      packages: read
+
+    steps:
+
+      - name: 📥 Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+          sparse-checkout: |
+            .github/
+          sparse-checkout-cone-mode: false
+
+      - name: 🔐 Azure Login
+        uses: ./.github/actions/azure/az-login
+        with:
+          azure_client_id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure_tenant_id: ${{ secrets.AZURE_TENANT_ID }}
+          azure_subscription_id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: 🧾 Compute Azure Container App names
+        id: naming
+        uses: ./.github/actions/azure/aca-naming
+        with:
+          environment: ${{ inputs.environment }}
+          azure_resource_group: ${{ vars.AZURE_RESOURCE_GROUP_NAME }}
+          acae_base_name: ${{ inputs.acae_base_name }}
+          repo_name: ${{ github.event.repository.name }}
+
+      - name: 🚀 Deploy to Azure Container App
+        id: deploy
+        uses: ./.github/actions/azure/aca-deploy
+        with:
+          azure_client_id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure_tenant_id: ${{ secrets.AZURE_TENANT_ID }}
+          azure_subscription_id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          aca_name: ${{ steps.naming.outputs.AZURE_ACA_NAME }}
+          rg_name: ${{ steps.naming.outputs.AZURE_RG_NAME }}
+          image: ${{ inputs.registry }}${{ inputs.registry_username != '' && format('/{0}', inputs.registry_username) || '' }}/${{ inputs.image_name }}:${{ inputs.tag_version }}
+          registry_server: ${{ inputs.registry }}
+          registry_identity: ${{ inputs.registry_identity }}
+          health_check_path: ${{ inputs.health_check_path }}
+          poll_max_attempts: ${{ inputs.deploy_poll_max_attempts }}
+          poll_interval_seconds: ${{ inputs.deploy_poll_interval_seconds }}
+
+      - name: 🔬 OWASP ZAP Baseline
+        uses: ./.github/actions/tools/security/owasp-zap
+        with:
+          url: https://${{ steps.deploy.outputs.FQDN }}
+          allow_issue_writing: 'false'
+          fail_action: 'false'
+          artifact_name: zap-report-${{ inputs.environment }}
+
+      - name: 🔬 Nuclei DAST Scan
+        uses: ./.github/actions/tools/security/nuclei
+        with:
+          url: https://${{ steps.deploy.outputs.FQDN }}
+          artifact_name: nuclei-report-${{ inputs.environment }}
+
+      - name: 🧾 Deployment Summary
+        uses: ./.github/actions/azure/aca-summary
+        with:
+          tag_version: ${{ inputs.tag_version }}
+          now: ${{ github.run_id }}
+          environment: ${{ inputs.environment }}
+          aca_name: ${{ steps.naming.outputs.AZURE_ACA_NAME }}
+          acae_name: ${{ steps.naming.outputs.AZURE_ACAE_NAME }}
+          rg_name: ${{ steps.naming.outputs.AZURE_RG_NAME }}
+          fqdn: ${{ steps.deploy.outputs.FQDN }}
+          state: ${{ steps.deploy.outputs.STATE }}

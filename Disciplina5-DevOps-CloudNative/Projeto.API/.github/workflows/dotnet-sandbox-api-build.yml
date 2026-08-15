@@ -1,0 +1,456 @@
+name: WFC .NET API — DevSecOps Dispatch ⚡
+run-name: "${{ github.actor }} - ${{ github.run_id }}"
+
+on:
+  workflow_call:
+    inputs:
+      build_mode:
+        description: "Qual ação deseja fazer?"
+        required: true
+        default: 'Build'
+        type: string
+      environment:
+        type: string
+        description: 'Environment to run the workflow'
+        required: true
+      tests_dir:
+        type: string
+        description: 'The main test folder'
+        required: false
+        default: ''
+      #build config
+      dotnet_version:
+        type: string
+        description: '.NET Version'
+        required: true
+        default: 10.x
+      project_base_dir:
+        type: string
+        description: 'Path to SLNX file'
+        required: true
+        default: ./src
+      solution_file_name:
+        type: string
+        description: 'The SLNX or SLN full name. eg: Usuarios.Api.slnx'
+        required: true
+        default: ""
+      main_project:
+        type: string
+        description: 'The main project. eg: Usuarios.Api'
+        required: true
+        default: ""
+      report_title:
+        type: string
+        description: 'Message to be displayed in the unit test report title'
+        required: true
+        default: 'Pos-Graduacao'
+      #build use
+      sonar_exclusions:
+        type: string
+        description: 'Path to exclusion from sonar, like migrations. Use comma separation'
+        required: false
+        default: ""
+      #push-image
+      image_name:
+        type: string
+        description: 'Image name to publish at github packages'
+        required: true
+        default: ""
+      openapi_dir:
+        type: string
+        description: 'Path to the folder containing OpenAPI specification files.'
+        required: false
+        default: ""
+      dockerfile_dir:
+        description: 'Folder containing the Dockerfile (relative to repo root)'
+        required: false
+        type: string
+        default: 'docker'
+      docker_build_context:
+        type: string
+        description: 'Docker build context (e.g. src/Project/Project or .)'
+        required: false
+        default: ''
+      docker_setup:
+        type: boolean
+        description: 'Whether to set up Docker for the other container scan'
+        required: false
+        default: false
+      coverage_threshold:
+        description: 'Minimum coverage percentage required (0-100)'
+        required: false
+        type: number
+        default: 0
+      #registry
+      registry:
+        type: string
+        description: 'Container registry URL (e.g. ghcr.io, docker.io, myacr.azurecr.io)'
+        required: true
+      registry_username:
+        type: string
+        description: 'Registry username. Defaults to github.actor when empty (suitable for ghcr.io)'
+        required: false
+        default: ''
+    secrets:
+      SONAR_PROJECT_KEY:
+        required: true
+        description: 'Sonar Project Key'
+      SONAR_TOKEN:
+        required: true
+        description: 'Sonar Token'
+      AZURE_CLIENT_ID:
+        required: true
+        description: 'Azure client ID for ACR OIDC authentication'
+      AZURE_TENANT_ID:
+        required: true
+        description: 'Azure tenant ID for ACR OIDC authentication'
+      AZURE_SUBSCRIPTION_ID:
+        required: true
+        description: 'Azure subscription ID for ACR OIDC authentication'
+    outputs:
+      tag_version:
+        description: 'Versão da tag gerada'
+        value: ${{ jobs.build.outputs.tag_version }}
+      image_exists:
+        description: 'Se a imagem já existe no registry'
+        value: ${{ jobs.check_image.outputs.image_exists }}
+
+env:
+  RED: '\033[0;31m'
+  GREEN: '\033[0;32m'
+  YELLOW: '\033[0;33m'
+  BLUE: '\033[0;34m'
+  RESET: '\033[0m'
+  BOLD: '\033[1m'
+  UNDERLINE: '\033[4m'
+  BOLD_UNDERLINE: '\033[1;4m'
+  BOLD_RED: '\033[1;31m'
+  BOLD_GREEN: '\033[1;32m'
+  BOLD_YELLOW: '\033[1;33m'
+  BOLD_BLUE: '\033[1;34m'
+
+jobs:
+  build:
+    name: Build
+    environment: ${{ inputs.environment }}
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
+    outputs:
+      tag_version: ${{ steps.get_version.outputs.TAG }}
+      now: ${{ steps.get_env.outputs.NOW }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      security-events: write
+      packages: write
+      id-token: write
+
+    steps:
+      - name: 🧭 Get Environment
+        id: get_env
+        run: |
+          echo -e "${GREEN} ⚠️ Environment ${{ inputs.environment }}"
+          echo "NOW=$(date +'%Y-%m-%dT%H:%M:%S')" >> $GITHUB_OUTPUT
+
+      - name: 📥 Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+          sparse-checkout: |
+            .github/
+            src/
+            tests/
+            docker/
+          sparse-checkout-cone-mode: false
+
+      - name: 🔍 Get-Version from csproj
+        id: get_version
+        uses: ./.github/actions/dotnet/get-version
+        with:
+          project_base_dir: ${{ inputs.project_base_dir }}
+          main_project: ${{ inputs.main_project }}
+          environment: ${{ inputs.environment }}
+
+      - name: 🔍 Check Tag
+        id: tag_check
+        uses: ./.github/actions/git/tag-check
+        with:
+          tag: ${{ steps.get_version.outputs.TAG }}
+          version_file: ${{ inputs.project_base_dir }}/${{ inputs.main_project }}/${{ inputs.main_project }}.csproj
+          fail_on_exists: false # ATENÇÃO: Trocar
+
+      - name: 🛠️ Setup .NET version ${{ inputs.dotnet_version }}
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: ${{ inputs.dotnet_version }}
+
+      - name: ✅ Check .NET version in use
+        run: |
+          echo "DOTNET_ROOT: $DOTNET_ROOT"
+          $DOTNET_ROOT/dotnet --info
+
+      - name: 🧱📤 Betterleaks
+        uses: ./.github/actions/tools/security/betterleaks
+
+      - name: 🧪 Dotnet Test & Coverage
+        id: dotnet_test
+        uses: ./.github/actions/dotnet/dotnet-test
+        with:
+          tests_dir: ${{ inputs.tests_dir }}
+          report_title: ${{ inputs.report_title }}
+          sonar_exclusions: ${{ inputs.sonar_exclusions }}
+          run_number: ${{ github.run_number }}
+          run_id: ${{ github.run_id }}
+
+      # - name: 📸 SonarCloud Analysis
+      #   uses: ./.github/actions/tools/code-quality/sonar-cloud-dotnet
+      #   with:
+      #     has_tests: ${{ steps.dotnet_test.outputs.has_tests }}
+      #     sonar_project_key: ${{ secrets.SONAR_PROJECT_KEY }}
+      #     sonar_organization: ${{ vars.SONAR_ORGANIZATION }}
+      #     sonar_token: ${{ secrets.SONAR_TOKEN }}
+      #     github_token: ${{ secrets.GITHUB_TOKEN }}
+      #     sonar_exclusions: ${{ inputs.sonar_exclusions }}
+      #     project_base_dir: ${{ inputs.project_base_dir }}
+      #     main_project: ${{ inputs.main_project }}
+      #     solution_file_name: ${{ inputs.solution_file_name }}
+
+      - name: 🎯 Generate coverage badge
+        if: ${{ steps.dotnet_test.outputs.has_tests == 'true' }}
+        uses: ./.github/actions/tools/coverage-badge
+        with:
+          coverage_file: coveragereport/Cobertura.xml
+          coverage_format: cobertura
+
+      - name: 🐳 Docker Build (local, for Security scan)
+        uses: ./.github/actions/tools/acr/buildx
+        with:
+          registry: ${{ inputs.registry }}
+          image_name: ${{ inputs.image_name }}
+          tag_version: ${{ steps.get_version.outputs.TAG }}
+          dockerfile: ${{ inputs.dockerfile_dir }}/Dockerfile
+          context: ${{ inputs.docker_build_context }}
+          platforms: 'linux/amd64'
+
+      # Trivy no source/repo SAST scan (vulnerabilities, secrets, misconfigurations)
+      - name: 🔎 Trivy - Filesystem Scan (vuln, secret, misconfig)
+        uses: ./.github/actions/tools/security/trivy-scan
+        with:
+          scan_type: 'fs'
+          scan_ref: '${{ env.working_directory }}'
+          scanners: 'vuln,misconfig,secret'
+          format: 'sarif'
+          output_file: 'trivy-fs-results.sarif'
+          severity: 'HIGH,CRITICAL'
+          ignore_unfixed: true
+          exit_code: '1'
+          trivyignores: ${{ steps.check_trivyignore.outputs.path }}
+          category: 'trivy-fs-vuln'
+
+      - name: 🔎 Trivy - license scan
+        uses: ./.github/actions/tools/security/trivy-scan
+        with:
+          scan_type: 'fs'
+          scan_ref: '${{ env.working_directory }}'
+          scanners: 'license'
+          format: 'sarif'
+          output_file: 'trivy-license-results.sarif'
+          severity: 'MEDIUM,HIGH,CRITICAL'
+          ignore_unfixed: true
+          exit_code: '1'
+          trivyignores: ${{ steps.check_trivyignore.outputs.path }}
+          category: 'trivy-fs-license'
+
+      - name: 🔎 Trivy - Image Scan (vuln, secret)
+        uses: ./.github/actions/tools/security/trivy-scan
+        with:
+          image_ref: ${{ inputs.registry }}/${{ inputs.image_name }}:${{ steps.get_version.outputs.TAG }}
+          scan_type: 'image'
+          format: 'sarif'
+          output_file: 'trivy-image-results.sarif'
+          severity: 'HIGH,CRITICAL'
+          ignore_unfixed: true
+          exit_code: '1'
+          trivyignores: ${{ steps.check_trivyignore.outputs.path }}
+          category: 'trivy-image'
+
+      # - name: 🔎 Snyk - .NET Project Scan
+      #   uses: ./.github/actions/tools/security/snyk-dotnet
+      #   with:
+      #     project_base_dir: ${{ inputs.project_base_dir }}
+      #     main_project: ${{ inputs.main_project }}
+      #     solution_file_name: ${{ inputs.solution_file_name }}
+      #     image_name: ${{ inputs.registry }}/${{ inputs.image_name }}:${{ steps.get_version.outputs.TAG }}
+      #     dockerfile_dir: ${{ inputs.dockerfile_dir }}
+      #     docker_build_context: ${{ inputs.docker_build_context }}
+      #     snyk_token: ${{ secrets.SNYK_API_KEY }}
+
+      - name: 🚀 Build to generate OpenAPI JSON
+        if: ${{ inputs.openapi_dir != '' }}
+        shell: bash
+        run: |
+          dotnet restore \
+            ${{ inputs.project_base_dir }}/${{ inputs.main_project }}/${{ inputs.main_project }}.csproj
+          dotnet build \
+            ${{ inputs.project_base_dir }}/${{ inputs.main_project }}/${{ inputs.main_project }}.csproj \
+            --no-restore \
+            --output ./output_build
+
+      - name: 🔍 Check OpenAPI files
+        if: ${{ inputs.openapi_dir != '' }}
+        shell: bash
+        run: |
+          openapi_path="./output_build/${{ inputs.openapi_dir }}"
+
+          if find "$openapi_path" -maxdepth 1 -type f \( -name '*.json' -o -name '*.yaml' -o -name '*.yml' \) | grep -q .; then
+            echo -e "${GREEN}✅ OpenAPI specification files found in ${openapi_path}."
+          else
+            echo -e "${YELLOW}⚠️ No OpenAPI specification files found in ${openapi_path}. Please ensure your build generates the expected OpenAPI JSON/YAML files."
+            exit 1
+          fi
+
+      - name: 📤 Upload OpenAPI artifacts
+        if: ${{ inputs.openapi_dir != '' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: OpenAPI-Specs
+          path: |
+            ./output_build/${{ inputs.openapi_dir }}/*.json
+            ./output_build/${{ inputs.openapi_dir }}/*.yaml
+            ./output_build/${{ inputs.openapi_dir }}/*.yml
+
+      - name: 🚀 Spectral OpenAPI Lint
+        if: ${{ inputs.openapi_dir != '' }}
+        uses: ./.github/actions/tools/code-quality/spectral
+        with:
+          openapi_files_path: ./output_build/${{ inputs.openapi_dir }}
+          node-version: ${{ env.nodeVersion }}
+
+      - name: 🧾 Write to workflow job summary
+        run: |
+          SUMMARY=$GITHUB_STEP_SUMMARY$'
+          # Versão gerada\n
+          | versao | data | 
+          |--|--|
+          | ${{ steps.get_version.outputs.tag }} | ${{ steps.get_env.outputs.now }} | \n
+          \n'
+          echo "$SUMMARY" >> $GITHUB_STEP_SUMMARY
+
+      - name: 🏷️ Create Tag
+        id: github_tag
+        if: ${{ inputs.build_mode != 'Build' }}
+        uses: ./.github/actions/git/tag-create
+        with:
+          tag: ${{ steps.get_version.outputs.TAG }}
+
+  check_image:
+    name: Check if image exists
+    if: ${{ inputs.build_mode == 'Build + Tag Validation' || inputs.build_mode == 'Build + Tag Validation + Deploy' }}
+    runs-on: ubuntu-latest
+    outputs:
+      image_exists: ${{ steps.check_image.outputs.IMAGE_EXISTS }}
+    needs: build
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+
+      - name: 📥 Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+          sparse-checkout: |
+            .github/
+          sparse-checkout-cone-mode: false
+
+      - name: Azure login for ACR
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Docker login to ACR
+        uses: ./.github/actions/tools/acr/login
+        with:
+          registry: ${{ inputs.registry }}
+
+      - name: 🔍 Check if image exists in registry
+        id: check_image
+        uses: ./.github/actions/tools/acr/check-image
+        with:
+          registry: ${{ inputs.registry }}
+          registry_username: ${{ inputs.registry_username }}
+          image_name: ${{ inputs.image_name }}
+          tag_version: ${{ needs.build.outputs.tag_version }}
+
+  push_image:
+    name: Push image to Registry
+    if: ${{ inputs.build_mode == 'Build + Tag Validation + Deploy' && needs.check_image.outputs.image_exists == 'false' }}
+    needs: [build, check_image]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      packages: write
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          sparse-checkout: |
+            .github/
+            src/
+            docker/
+          sparse-checkout-cone-mode: false
+
+      - name: Azure login for ACR
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Docker login to ACR
+        uses: ./.github/actions/tools/acr/login
+        with:
+          registry: ${{ inputs.registry }}
+
+      - name: 🐳 Push Docker image
+        uses: ./.github/actions/tools/acr/buildx
+        with:
+          registry: ${{ inputs.registry }}
+          registry_username: ${{ inputs.registry_username }}
+          image_name: ${{ inputs.image_name }}
+          tag_version: ${{ needs.build.outputs.tag_version }}
+          dockerfile: ${{ inputs.dockerfile_dir }}/Dockerfile
+          context: ${{ inputs.docker_build_context }}
+          platforms: 'linux/amd64'
+          push: 'true'
+          load: 'false'
+
+      - name: 📝 Write to workflow job summary DEPLOY
+        run: |
+          SUMMARY=$'
+          # Image publicada\n
+          | versao | data | 
+          |--|--|
+          | ${{ needs.build.outputs.tag_version }} | ${{ needs.build.outputs.now }} | \n
+          \n'
+          echo "$SUMMARY" >> $GITHUB_STEP_SUMMARY
+
+  notify_image_exists:
+    name: Notify when already image exists
+    if: ${{ inputs.build_mode == 'Build + Tag Validation + Deploy' && needs.check_image.outputs.image_exists == 'true'}}
+    needs: [build, check_image]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Write to workflow job summary
+        run: |
+          echo "Image with tag ${{ needs.build.outputs.tag_version }} already exists. Skipping push image to registry and publish on Azure Cloud." >> $GITHUB_STEP_SUMMARY

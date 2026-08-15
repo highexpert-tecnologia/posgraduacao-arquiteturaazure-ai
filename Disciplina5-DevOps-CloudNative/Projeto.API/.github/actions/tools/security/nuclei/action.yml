@@ -1,0 +1,44 @@
+name: 'Nuclei DAST Scan'
+description: 'Runs Nuclei template-based DAST scan against a live URL to detect CVEs, misconfigurations, and exposures.'
+
+inputs:
+  url:
+    description: 'Target URL to scan (e.g. https://myapp.azurecontainerapps.io)'
+    required: true
+  severity:
+    description: 'Comma-separated severity levels to report (info,low,medium,high,critical)'
+    required: false
+    default: 'medium,high,critical'
+  fail_action:
+    description: 'Fail the action if findings are reported (true/false)'
+    required: false
+    default: 'false'
+  artifact_name:
+    description: 'Name of the artifact to store the Nuclei SARIF report'
+    required: false
+    default: 'nuclei_report'
+
+runs:
+  using: 'composite'
+  steps:
+    - run: echo "Running Nuclei DAST scan against ${{ inputs.url }}"
+      shell: bash
+
+    - name: 🔬 Nuclei DAST Scan
+      continue-on-error: ${{ inputs.fail_action == 'false' }}
+      uses: projectdiscovery/nuclei-action@v3
+      with:
+        target: ${{ inputs.url }}
+        flags: >-
+          -severity ${{ inputs.severity }}
+          -tags cves,vulnerabilities,misconfiguration,exposures
+          -no-interactsh
+        sarif-export: nuclei-results.sarif
+
+    - name: 🔬📤 Upload Nuclei report
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ inputs.artifact_name }}
+        path: nuclei-results.sarif
+        if-no-files-found: warn

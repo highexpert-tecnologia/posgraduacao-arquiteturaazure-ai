@@ -1,0 +1,24 @@
+.env
+.sonarqube
+
+# Build output
+bin/
+obj/
+
+output_build/
+
+# Test and coverage output
+TestResults/
+coverage/
+coveragereport/
+
+# User and IDE-specific files
+.vs/
+*.rsuser
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Diagnostic files
+*.log

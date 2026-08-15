@@ -1,0 +1,115 @@
+name: .NET API — Weekly Security Scan 🛡️
+run-name: "🛡️ Weekly Security Scan | ${{ github.actor }}"
+
+on:
+  schedule:
+    - cron: '0 11 * * 1'  # Every Monday at 08:00 BRT (UTC-3)
+  workflow_dispatch: {}
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  sast:
+    name: SAST — Trivy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+          sparse-checkout: |
+            .github/
+            src/
+            docker/
+            .trivyignore.yaml
+          sparse-checkout-cone-mode: false
+
+      - name: 🔎 Trivy — Filesystem Scan (vuln, secret, misconfig)
+        uses: ./.github/actions/tools/security/trivy-scan
+        with:
+          scan_type: 'fs'
+          scan_ref: '.'
+          scanners: 'vuln,misconfig,secret'
+          format: 'sarif'
+          output_file: 'trivy-weekly-fs-results.sarif'
+          severity: 'HIGH,CRITICAL'
+          ignore_unfixed: true
+          exit_code: '0'
+          trivyignores: ${{ hashFiles('.trivyignore.yaml') != '' && '.trivyignore.yaml' || '' }}
+          category: 'trivy-weekly-fs'
+
+      - name: 🔎 Trivy — License Scan
+        uses: ./.github/actions/tools/security/trivy-scan
+        with:
+          scan_type: 'fs'
+          scan_ref: '.'
+          scanners: 'license'
+          format: 'sarif'
+          output_file: 'trivy-weekly-license-results.sarif'
+          severity: 'MEDIUM,HIGH,CRITICAL'
+          ignore_unfixed: true
+          exit_code: '0'
+          trivyignores: ${{ hashFiles('.trivyignore.yaml') != '' && '.trivyignore.yaml' || '' }}
+          category: 'trivy-weekly-license'
+
+  dast:
+    name: DAST — ZAP + Nuclei (${{ matrix.environment }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: [development, staging, production]
+    environment: ${{ matrix.environment }}
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: 🔐 Azure Login
+        uses: ./.github/actions/azure/az-login
+        with:
+          azure_client_id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure_tenant_id: ${{ secrets.AZURE_TENANT_ID }}
+          azure_subscription_id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: 🧾 Compute Azure Container App names
+        id: naming
+        uses: ./.github/actions/azure/aca-naming
+        with:
+          environment: ${{ matrix.environment }}
+          azure_resource_group: ${{ vars.AZURE_RESOURCE_GROUP_NAME }}
+          acae_base_name: ${{ vars.AZURE_ACAE_BASE }}
+          repo_name: ${{ github.event.repository.name }}
+
+      - name: 🌐 Get App FQDN
+        id: fqdn
+        shell: bash
+        run: |
+          FQDN=$(az containerapp show \
+            --name "${{ steps.naming.outputs.AZURE_ACA_NAME }}" \
+            --resource-group "${{ steps.naming.outputs.AZURE_RG_NAME }}" \
+            --query "properties.configuration.ingress.fqdn" \
+            --output tsv)
+          echo "FQDN=$FQDN" >> $GITHUB_OUTPUT
+
+      - name: 🕷️ OWASP ZAP Baseline
+        uses: ./.github/actions/tools/security/owasp-zap
+        with:
+          url: https://${{ steps.fqdn.outputs.FQDN }}
+          allow_issue_writing: 'false'
+          fail_action: 'false'
+          artifact_name: zap-weekly-report-${{ matrix.environment }}
+
+      - name: 🔬 Nuclei DAST Scan
+        uses: ./.github/actions/tools/security/nuclei
+        with:
+          url: https://${{ steps.fqdn.outputs.FQDN }}
+          artifact_name: nuclei-weekly-report-${{ matrix.environment }}

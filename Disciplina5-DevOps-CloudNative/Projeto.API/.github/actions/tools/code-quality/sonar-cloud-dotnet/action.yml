@@ -1,0 +1,124 @@
+name: 'SonarCloud Analysis'
+description: 'Sets up and runs SonarCloud analysis with or without test coverage.'
+
+inputs:
+  has_tests:
+    description: 'Whether test projects exist and tests should be collected for coverage (true/false)'
+    required: true
+    default: 'false'
+  sonar_project_key:
+    description: 'SonarCloud project key'
+    required: true
+  sonar_organization:
+    description: 'SonarCloud organization'
+    required: true
+  sonar_token:
+    description: 'SonarCloud token'
+    required: true
+  github_token:
+    description: 'GitHub token'
+    required: true
+  sonar_exclusions:
+    description: 'Paths to exclude from Sonar analysis (comma separated)'
+    required: false
+    default: ''
+  project_base_dir:
+    description: 'Path to project base directory'
+    required: true
+  main_project:
+    description: 'The main project name'
+    required: true
+  solution_file_name:
+    description: 'The SLNX or SLN full name'
+    required: true
+  java_version:
+    description: 'Java version for SonarCloud scanner'
+    required: false
+    default: '23'
+  java_distro:
+    description: 'Java distribution for SonarCloud scanner'
+    required: false
+    default: 'zulu'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: 🛠️ Set up JDK ${{ inputs.java_distro }} ${{ inputs.java_version }}
+      uses: actions/setup-java@v5
+      with:
+        java-version: ${{ inputs.java_version }}
+        distribution: ${{ inputs.java_distro }}
+
+    - name: 🔐 SonarCloud packages cache
+      uses: actions/cache@v4
+      with:
+        path: ~/sonar/cache
+        key: ${{ runner.os }}-sonar
+        restore-keys: ${{ runner.os }}-sonar
+
+    - name: 🔐 SonarCloud scanner cache
+      id: cache_sonar_scanner
+      uses: actions/cache@v4
+      with:
+        path: ./.sonar/scanner
+        key: ${{ runner.os }}-sonar-scanner
+        restore-keys: ${{ runner.os }}-sonar-scanner
+
+    - name: 🔐 SonarCloud scanner installer
+      shell: bash
+      run: |
+        mkdir -p .sonar/scanner
+        dotnet tool install --global dotnet-sonarscanner
+
+    - name: 🔐 Build, analyze and use coverage (Test ✅, Sonar ✅)
+      if: ${{ inputs.has_tests == 'true' }}
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+        SONAR_TOKEN: ${{ inputs.sonar_token }}
+      run: |
+        dotnet-sonarscanner begin \
+          /k:"${{ inputs.sonar_project_key }}" \
+          /o:"${{ inputs.sonar_organization }}" \
+          /d:sonar.token="${{ inputs.sonar_token }}" \
+          /d:sonar.host.url="https://sonarcloud.io" \
+          /d:sonar.language='cs' \
+          /d:sonar.scanner.scanAll=false \
+          /d:sonar.cs.vscoveragexml.reportsPaths=coverage*.xml \
+          /d:sonar.scanner.skipJreProvisioning=true \
+          /d:sonar.scanner.javaExePath=${JAVA_HOME}/bin/java \
+          /d:sonar.exclusions="${{ inputs.sonar_exclusions || ' '}}"
+        dotnet restore ${{ inputs.project_base_dir }}/${{ inputs.solution_file_name }}
+        dotnet build ${{ inputs.project_base_dir }}/${{ inputs.solution_file_name }} \
+          --no-incremental \
+          --no-restore
+        echo -e "\033[0;32m➡️ Rodando testes com cobertura para o SonarQube"
+        dotnet-coverage collect "dotnet test ${{ inputs.project_base_dir }}/${{ inputs.solution_file_name }} \
+                                   --no-build \
+                                   --configuration Debug" \
+          --output-format xml \
+          --output "coverage.xml"
+        dotnet-sonarscanner end /d:sonar.token="${{ inputs.sonar_token }}"
+
+    - name: 🔐 Build, analyze without coverage (Test ⛔, Sonar ✅)
+      if: ${{ inputs.has_tests != 'true' }}
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+        SONAR_TOKEN: ${{ inputs.sonar_token }}
+      run: |
+        dotnet-sonarscanner begin \
+          /k:"${{ inputs.sonar_project_key }}" \
+          /o:"${{ inputs.sonar_organization }}" \
+          /d:sonar.token="${{ inputs.sonar_token }}" \
+          /d:sonar.host.url="https://sonarcloud.io" \
+          /d:sonar.language='cs' \
+          /d:sonar.scanner.scanAll=false \
+          /d:sonar.scanner.skipJreProvisioning=true \
+          /d:sonar.scanner.javaExePath=${JAVA_HOME}/bin/java \
+          /d:sonar.exclusions="${{ inputs.sonar_exclusions || ' '}}"
+        dotnet restore ${{ inputs.project_base_dir }}/${{ inputs.main_project }}/${{ inputs.main_project }}.csproj
+        dotnet build ${{ inputs.project_base_dir }}/${{ inputs.main_project }}/${{ inputs.main_project }}.csproj \
+          --no-incremental \
+          --no-restore
+        dotnet-sonarscanner end /d:sonar.token="${{ inputs.sonar_token }}"

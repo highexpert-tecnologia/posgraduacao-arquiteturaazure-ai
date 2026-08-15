@@ -1,0 +1,41 @@
+# wsl docker compose -f ./docker/compose.yaml up --build --no-cache
+# wsl docker compose -f ./docker/compose.yaml down --volumes --remove-orphans
+
+# limpeza geral
+# wsl docker rm -f $(wsl docker ps -aq) 2>$null; wsl docker system prune -a -f --volumes
+
+services:
+  sql-edge:
+    image: mcr.microsoft.com/azure-sql-edge:latest
+    platform: linux/amd64
+    environment:
+      ACCEPT_EULA: Y
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD}
+    ports:
+      - "1433:1433"
+    volumes:
+      - sql-edge-data:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -Q \"SELECT 1\" > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  usuarios-api:
+    build:
+      context: ../
+      dockerfile: docker/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_HTTP_PORTS: 80
+      ConnectionStrings__UsersDatabase: Server=sql-edge,1433;Initial Catalog=users;User ID=sa;Password=${MSSQL_SA_PASSWORD};Encrypt=False;TrustServerCertificate=True;Connection Timeout=30;
+      Database__ApplyMigrations: "true"
+    ports:
+      - "${API_PORT:-8081}:80"
+    depends_on:
+      sql-edge:
+        condition: service_healthy
+
+volumes:
+  sql-edge-data:

@@ -1,0 +1,86 @@
+
+
+name: 'Get Version from csproj'
+description: 'Extracts version information (Version, VersionPrefix, VersionSuffix) from a .csproj file and builds a TAG.'
+
+inputs:
+  project_base_dir:
+    description: 'Path to the project base directory'
+    required: true
+  main_project:
+    description: 'The main project name (e.g. DEPLOY.PROJECT.API)'
+    required: true
+  environment:
+    description: 'Deployment environment (e.g., development, staging, production)'
+    required: true
+
+outputs:
+  TAG:
+    description: 'The final computed tag (version with environment suffix if applicable)'
+    value: ${{ steps.get_version.outputs.TAG }}
+  VERSION:
+    description: 'The Version value from csproj'
+    value: ${{ steps.get_version.outputs.VERSION }}
+
+env:
+  RED: '\033[0;31m'
+  GREEN: '\033[0;32m'
+  YELLOW: '\033[0;33m'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: 🔍 Get-Version from csproj
+      id: get_version
+      shell: bash
+      run: |
+        csproj_path="${{ inputs.project_base_dir }}/${{ inputs.main_project }}/${{ inputs.main_project }}.csproj"
+
+        # Extrair os valores
+        version=$(sed -n 's/.*<Version>\(.*\)<\/Version>.*/\1/p' "$csproj_path")
+        versionPrefix=$(sed -n 's/.*<VersionPrefix>\(.*\)<\/VersionPrefix>.*/\1/p' "$csproj_path")
+        versionSuffix=$(sed -n 's/.*<VersionSuffix>\(.*\)<\/VersionSuffix>.*/\1/p' "$csproj_path")
+
+        # Validar versão
+        if [[ -z "$version" ]]; then
+          echo -e "${RED}❌ Erro: A tag <Version> é obrigatória no arquivo .csproj"
+          exit 1
+        fi
+
+        # Montar TAG
+        tag="$version"
+        if [[ -n "$versionPrefix" ]]; then
+          tag="${versionPrefix}-${tag}"
+          ColorTagPrefix="${GREEN}"
+        else
+          ColorTagPrefix="${YELLOW}"
+        fi
+
+        if [[ -n "$versionSuffix" ]]; then
+          tag="${tag}-${versionSuffix}"
+          ColorTagSuffix="${GREEN}"
+        else
+          ColorTagSuffix="${YELLOW}"
+        fi
+
+        # Append suffix based on environment
+        ENVIRONMENT='${{ inputs.environment }}'
+        BRANCH_NAME="${GITHUB_REF_NAME}"
+
+        if [ "${ENVIRONMENT,,}" == "development" ]; then
+          tag="${tag}-dev"
+          echo -e "🔧 ${YELLOW} Aplicando sufixo -dev (env=$ENVIRONMENT, branch=$BRANCH_NAME)"
+        elif [ "${ENVIRONMENT,,}" == "staging" ]; then
+          tag="${tag}-stg"
+          echo -e "🛡️ ${YELLOW} Aplicando sufixo -stg (env=$ENVIRONMENT, branch=$BRANCH_NAME)"
+        else
+          echo -e "✅ ${GREEN} Sem sufixo (env=$ENVIRONMENT, branch=$BRANCH_NAME)"
+        fi
+
+        echo -e "📦${GREEN} Version: $version"
+        echo -e "⬅️${ColorTagPrefix} Prefix: ${versionPrefix:-n/a}"
+        echo -e "➡️${ColorTagSuffix} Suffix: ${versionSuffix:-n/a}"
+        echo -e "🏷️${GREEN} TAG final: $tag"
+
+        echo "TAG=$tag" >> "$GITHUB_OUTPUT"
+        echo "VERSION=$version" >> "$GITHUB_OUTPUT"

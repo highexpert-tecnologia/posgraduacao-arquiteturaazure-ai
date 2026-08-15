@@ -1,0 +1,201 @@
+name: Trivy Security Scan
+description: Composite action to scan Docker images for vulnerabilities using Trivy
+
+inputs:
+  image_ref:
+    description: 'Docker image reference to scan (e.g., ghcr.io/org/image:tag)'
+    required: true
+    default: ''
+  severity:
+    description: 'Severities to scan for (comma-separated)'
+    required: false
+    default: 'MEDIUM,HIGH,CRITICAL'
+  format:
+    description: 'Output format (sarif, json, table, github)'
+    required: false
+    default: 'github'
+  output_file:
+    description: 'Output file name'
+    required: false
+    default: 'trivy-results.sarif'
+  upload_to_security:
+    description: 'Upload results to GitHub Security tab'
+    required: false
+    default: 'true'
+  scan_type:
+    description: 'Type of scan (image, fs, license)'
+    required: true
+    default: ''
+  scan_ref:
+    description: 'Directory or file to scan (used with fs scan-type)'
+    required: false
+    default: '.'
+  scanners:
+    description: 'Comma-separated list of scanners (vuln, misconfig, secret, license)'
+    required: false
+    default: 'vuln'
+  ignore_unfixed:
+    description: 'Ignore unpatched/unfixed vulnerabilities'
+    required: false
+    default: 'false'
+  trivyignores:
+    description: 'Path to trivyignore file (e.g., .trivyignore.yaml). Leave empty to skip.'
+    required: false
+    default: ''
+  exit_code:
+    description: 'Exit code when vulnerabilities are found (0 or 1)'
+    required: false
+    default: '0'
+  category:
+    description: 'Unique category for SARIF upload (required when multiple Trivy scans run in same job)'
+    required: false
+    default: 'trivy'
+
+outputs:
+  scan_results:
+    description: "Path to scan results file"
+    value: ${{ steps.scan_image.outputs.output-file || steps.scan_fs.outputs.output-file }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Manual Trivy Setup
+      uses: aquasecurity/setup-trivy@v0.3.1
+      with:
+        cache: true
+        version: v0.72.0
+
+    - name: 🔍 Scan with Trivy (image) - SARIF report
+      if: ${{ inputs.scan_type == 'image' }}
+      id: scan_image
+      uses: aquasecurity/trivy-action@v0.36.0
+      with:
+        skip-setup-trivy: true
+        image-ref: ${{ inputs.image_ref }}
+        format: ${{ inputs.format }}
+        output: ${{ inputs.output_file }}
+        severity: ${{ inputs.severity }}
+        scan-type: ${{ inputs.scan_type }}
+        ignore-unfixed: ${{ inputs.ignore_unfixed }}
+        trivyignores: ${{ inputs.trivyignores }}
+        exit-code: '0'
+
+    - name: 🚫 Block on severity violations (image)
+      if: ${{ inputs.scan_type == 'image' && inputs.exit_code == '1' }}
+      uses: aquasecurity/trivy-action@v0.36.0
+      with:
+        skip-setup-trivy: true
+        image-ref: ${{ inputs.image_ref }}
+        format: 'table'
+        severity: ${{ inputs.severity }}
+        scan-type: ${{ inputs.scan_type }}
+        ignore-unfixed: ${{ inputs.ignore_unfixed }}
+        trivyignores: ${{ inputs.trivyignores }}
+        exit-code: '1'
+
+    - name: 🔍 Scan with Trivy (filesystem) - SARIF report
+      if: ${{ inputs.scan_type == 'fs' }}
+      id: scan_fs
+      uses: aquasecurity/trivy-action@v0.36.0
+      with:
+        skip-setup-trivy: true
+        scan-type: ${{ inputs.scan_type }}
+        scan-ref: ${{ inputs.scan_ref }}
+        scanners: ${{ inputs.scanners }}
+        format: ${{ inputs.format }}
+        output: ${{ inputs.output_file }}
+        severity: ${{ inputs.severity }}
+        ignore-unfixed: ${{ inputs.ignore_unfixed }}
+        trivyignores: ${{ inputs.trivyignores }}
+        exit-code: '0'
+
+    - name: 🚫 Block on severity violations (filesystem)
+      if: ${{ inputs.scan_type == 'fs' && inputs.exit_code == '1' }}
+      uses: aquasecurity/trivy-action@v0.36.0
+      with:
+        skip-setup-trivy: true
+        scan-type: ${{ inputs.scan_type }}
+        scan-ref: ${{ inputs.scan_ref }}
+        scanners: ${{ inputs.scanners }}
+        format: 'table'
+        severity: ${{ inputs.severity }}
+        ignore-unfixed: ${{ inputs.ignore_unfixed }}
+        trivyignores: ${{ inputs.trivyignores }}
+        exit-code: '1'
+
+    - name: 🔍 Scan with Trivy (license) - SARIF report
+      if: ${{ inputs.scan_type == 'license' }}
+      id: scan_license
+      uses: aquasecurity/trivy-action@v0.36.0
+      with:
+        skip-setup-trivy: true
+        scan-type: ${{ inputs.scan_type }}
+        scan-ref: ${{ inputs.scan_ref }}
+        scanners: ${{ inputs.scanners }}
+        format: ${{ inputs.format }}
+        output: ${{ inputs.output_file }}
+        severity: ${{ inputs.severity }}
+        ignore-unfixed: ${{ inputs.ignore_unfixed }}
+        trivyignores: ${{ inputs.trivyignores }}
+        exit-code: '0'
+
+    - name: 🚫 Block on severity violations (license)
+      if: ${{ inputs.scan_type == 'license' && inputs.exit_code == '1' }}
+      uses: aquasecurity/trivy-action@v0.36.0
+      with:
+        scan-type: ${{ inputs.scan_type }}
+        scan-ref: ${{ inputs.scan_ref }}
+        scanners: ${{ inputs.scanners }}
+        format: 'table'
+        severity: ${{ inputs.severity }}
+        ignore-unfixed: ${{ inputs.ignore_unfixed }}
+        trivyignores: ${{ inputs.trivyignores }}
+        exit-code: '1'
+
+    - name: 📤 Upload Trivy scan results to GitHub Security
+      if: ${{ inputs.upload_to_security == 'true' && inputs.format == 'sarif' && always() }}
+      uses: github/codeql-action/upload-sarif@v4
+      continue-on-error: true
+      with:
+        sarif_file: ${{ inputs.output_file }}
+        category: ${{ inputs.category }}
+
+    - name: 📦 Upload scan results as artifact
+      if: ${{ always() && inputs.format == 'sarif' }}
+      uses: actions/upload-artifact@v7
+      continue-on-error: true
+      with:
+        name: ${{ inputs.category }}-results
+        path: ${{ inputs.output_file }}
+        retention-days: 30
+
+    - name: 📊 Summary
+      shell: bash
+      run: |
+        echo "### 🔍 Trivy Security Scan" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        if [ "${{ inputs.scan_type }}" == "image" ]; then
+          echo "- **Scan Type:** Image Vulnerability Scan" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image:** \`${{ inputs.image_ref }}\`" >> $GITHUB_STEP_SUMMARY
+        elif [ "${{ inputs.scan_type }}" == "fs" ]; then
+          echo "- **Scan Type:** Filesystem Scan" >> $GITHUB_STEP_SUMMARY
+        elif [ "${{ inputs.scan_type }}" == "license" ]; then
+          echo "- **Scan Type:** License Compliance Scan" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "- **Scan Type:** Unknown" >> $GITHUB_STEP_SUMMARY
+        fi
+        echo "- **Severity:** \`${{ inputs.severity }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "- **Format:** \`${{ inputs.format }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "- **Output:** \`${{ inputs.output_file }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        if [ -f "${{ inputs.output_file }}" ]; then
+          echo "✅ Scan completed successfully" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📥 **View Results:**" >> $GITHUB_STEP_SUMMARY
+          echo "- Check the workflow logs for detailed table output" >> $GITHUB_STEP_SUMMARY
+          echo "- Download the \`trivy-scan-results\` artifact for SARIF format" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "> ℹ️ **Note:** Upload to GitHub Security tab requires Advanced Security to be enabled on private repositories." >> $GITHUB_STEP_SUMMARY
+        else
+          echo "⚠️ Scan results file not found" >> $GITHUB_STEP_SUMMARY
+        fi

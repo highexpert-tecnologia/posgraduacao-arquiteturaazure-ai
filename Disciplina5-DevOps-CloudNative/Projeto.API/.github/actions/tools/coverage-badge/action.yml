@@ -1,0 +1,129 @@
+name: 'Coverage Badge Generator'
+description: 'Reads a coverage report and generates a shields.io coverage badge'
+
+inputs:
+  coverage_file:
+    description: 'Path to the coverage file (cobertura XML, jacoco XML, lcov.info, or json-summary)'
+    required: true
+  coverage_format:
+    description: 'Format of the coverage file: cobertura | jacoco | lcov | json-summary'
+    required: false
+    default: 'cobertura'
+  threshold_green:
+    description: 'Minimum percentage for brightgreen badge'
+    required: false
+    default: '90'
+  threshold_yellow:
+    description: 'Minimum percentage for yellow badge'
+    required: false
+    default: '70'
+  badge_output_file:
+    description: 'Path to write the badge markdown file'
+    required: false
+    default: 'coverage-badge.md'
+
+outputs:
+  coverage_percentage:
+    description: 'Coverage percentage (e.g. 85.3)'
+    value: ${{ steps.generate_badge.outputs.COVERAGE_PERCENTAGE }}
+  badge_color:
+    description: 'Badge color (brightgreen, yellow, red)'
+    value: ${{ steps.generate_badge.outputs.BADGE_COLOR }}
+  badge_url:
+    description: 'Full shields.io badge URL'
+    value: ${{ steps.generate_badge.outputs.BADGE_URL }}
+
+env:
+  GREEN: '\033[0;32m'
+  YELLOW: '\033[0;33m'
+  RESET: '\033[0m'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: 🎯 Generate coverage badge
+      id: generate_badge
+      shell: bash
+      run: |
+        FORMAT="${{ inputs.coverage_format }}"
+        FILE="${{ inputs.coverage_file }}"
+
+        if [ ! -f "$FILE" ]; then
+          echo -e "⚠️ Coverage file not found: $FILE"
+          COVERAGE="0.0"
+        else
+          if [ "$FORMAT" = "cobertura" ]; then
+            COVERAGE=$(python3 -c "
+        import xml.etree.ElementTree as ET
+        try:
+            tree = ET.parse('${FILE}')
+            root = tree.getroot()
+            node = root if root.tag == 'coverage' else root.find('.//coverage')
+            rate = float(node.attrib['line-rate']) * 100
+            print(f'{rate:.1f}')
+        except Exception as e:
+            print('0.0')
+        ")
+
+          elif [ "$FORMAT" = "jacoco" ]; then
+            LINE_COUNTER=$(grep 'type="LINE"' "$FILE" | tail -1)
+            COVERED=$(echo "$LINE_COUNTER" | grep -oP 'covered="\K[0-9]+' || echo "0")
+            MISSED=$(echo "$LINE_COUNTER" | grep -oP 'missed="\K[0-9]+' || echo "0")
+            TOTAL=$(( COVERED + MISSED ))
+            if [ "$TOTAL" -gt 0 ]; then
+              COVERAGE=$(python3 -c "print(f'{$COVERED / $TOTAL * 100:.1f}')")
+            else
+              COVERAGE="0.0"
+            fi
+
+          elif [ "$FORMAT" = "lcov" ]; then
+            TOTAL=$(grep "^LF:" "$FILE" | awk -F: '{sum += $2} END {print sum+0}')
+            HIT=$(grep "^LH:" "$FILE" | awk -F: '{sum += $2} END {print sum+0}')
+            if [ "$TOTAL" -gt 0 ]; then
+              COVERAGE=$(python3 -c "print(f'{$HIT / $TOTAL * 100:.1f}')")
+            else
+              COVERAGE="0.0"
+            fi
+
+          elif [ "$FORMAT" = "json-summary" ]; then
+            COVERAGE=$(python3 -c "
+        import json
+        try:
+            with open('${FILE}') as f:
+                data = json.load(f)
+            pct = data['total']['lines']['pct']
+            print(f'{float(pct):.1f}')
+        except Exception as e:
+            print('0.0')
+        ")
+          else
+            echo "❌ Unsupported format: $FORMAT"
+            COVERAGE="0.0"
+          fi
+        fi
+
+        echo "Coverage: ${COVERAGE}%"
+
+        # Determine badge color
+        GREEN_T=${{ inputs.threshold_green }}
+        YELLOW_T=${{ inputs.threshold_yellow }}
+
+        if (( $(echo "$COVERAGE >= $GREEN_T" | bc -l) )); then
+          COLOR="brightgreen"
+        elif (( $(echo "$COVERAGE >= $YELLOW_T" | bc -l) )); then
+          COLOR="yellow"
+        else
+          COLOR="red"
+        fi
+
+        BADGE_URL="https://img.shields.io/badge/coverage-${COVERAGE}%25-${COLOR}"
+
+        echo "COVERAGE_PERCENTAGE=${COVERAGE}" >> "$GITHUB_OUTPUT"
+        echo "BADGE_COLOR=${COLOR}" >> "$GITHUB_OUTPUT"
+        echo "BADGE_URL=${BADGE_URL}" >> "$GITHUB_OUTPUT"
+
+        echo "COVERAGE_PERCENTAGE=${COVERAGE}" >> "$GITHUB_ENV"
+        echo "BADGE_COLOR=${COLOR}" >> "$GITHUB_ENV"
+
+        echo "![Coverage](${BADGE_URL})" > "${{ inputs.badge_output_file }}"
+        echo -e "🛡️ Badge URL: $BADGE_URL"

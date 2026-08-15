@@ -1,0 +1,74 @@
+name: 'Snyk Security Scan'
+description: 'Runs Snyk container monitor, vulnerability scan, uploads SARIF and artifacts.'
+
+inputs:
+  snyk_token:
+    description: 'Snyk API token'
+    required: true
+  project_base_dir:
+    description: 'Path to project base directory'
+    required: true
+  main_project:
+    description: 'The main project name'
+    required: true
+  solution_file_name:
+    description: 'The SLNX or SLN full name'
+    required: true
+  image_name:
+    description: 'Image name for container scan'
+    required: true
+  dockerfile_dir:
+    description: 'Folder containing the Dockerfile (relative to repo root)'
+    required: false
+    default: 'docker'
+  docker_build_context:
+    description: 'Docker build context (e.g. src/Project/Project or .)'
+    required: false
+    default: ''
+
+runs:
+  using: 'composite'
+  steps:
+    - name: 🍵 Restore dependencies
+      shell: bash
+      run: |
+        dotnet restore \
+          ${{ inputs.project_base_dir }}/${{ inputs.main_project }}/${{ inputs.main_project }}.csproj
+
+    - name: 🍵 Snyk Setup
+      uses: snyk/actions/setup@master
+
+    # - name: 🍵 Snyk Container Monitor
+    #   shell: bash
+    #   env:
+    #     SNYK_TOKEN: ${{ inputs.snyk_token }}
+    #   run: |
+    #     snyk container monitor \
+    #       ${{ inputs.image_name }} \
+    #       --app-vulns \
+    #       --exclude-base-image-vulns \
+    #       --file=${{ inputs.dockerfile_dir }}/Dockerfile
+
+    - name: 🍵 Run Snyk to check for vulnerabilities
+      shell: bash
+      continue-on-error: true
+      env:
+        SNYK_TOKEN: ${{ inputs.snyk_token }}
+      run: |
+        snyk test \
+          --app-vulns \
+          --sarif-file-output=snykDotNet.sarif \
+          --file=${{ inputs.project_base_dir }}/${{ inputs.main_project }}/${{ inputs.main_project }}.csproj
+
+    - name: 🍵📤 Upload result to GitHub Code Scanning
+      uses: github/codeql-action/upload-sarif@v4
+      continue-on-error: true
+      with:
+        sarif_file: snykDotNet.sarif
+
+    - name: 🍵📤 Upload Snyk Container test
+      uses: actions/upload-artifact@v7
+      with:
+        name: Snyk-Container-Test
+        path: |
+          vuln.json

@@ -1,0 +1,43 @@
+name: .NET API — OTel Pipeline Export 📊
+run-name: "📊 OTel Export | ${{ github.event.workflow_run.name }}"
+
+on:
+  workflow_run:
+    workflows:
+      - '.NET API — CI/CD Pipeline'
+      - '.NET API — PR Check'
+      - '.NET API — Weekly Security Scan 🟢🛡️'
+    types:
+      - completed
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+  ACTIONS_ALLOW_USE_UNSECURE_node-version: 'true'
+
+jobs:
+  otel_export:
+    name: Export to Grafana Cloud
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+
+    steps:
+      - name: 🏷️ Compute service name
+        id: svc
+        shell: bash
+        run: |
+          RAW="${{ github.event.workflow_run.name }}"
+          NAME="${RAW//|/-}"
+          NAME="${NAME// /}"
+          echo "value=dotnet-${NAME}-${{ github.event.workflow_run.id }}" >> $GITHUB_OUTPUT
+
+      - name: 📊 Export pipeline trace to HoneyComb
+        uses: inception-health/otel-export-trace-action@v1
+        with:
+          otlpEndpoint: grpc://api.honeycomb.io:443/
+          otlpHeaders: x-honeycomb-team=${{ secrets.OTLP_HONEYCOMB_HEADERS }},x-honeycomb-dataset=TEST
+          githubToken: ${{ secrets.GITHUB_TOKEN }}
+          otelServiceName: ${{ steps.svc.outputs.value }}
+          runId: ${{ github.event.workflow_run.id }}

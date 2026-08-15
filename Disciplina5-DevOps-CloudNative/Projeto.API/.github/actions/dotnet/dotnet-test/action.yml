@@ -1,0 +1,79 @@
+name: 'Dotnet Test & Coverage'
+description: 'Checks for test projects, runs tests with coverage, generates reports, and uploads artifacts.'
+
+inputs:
+  tests_dir:
+    description: 'The main test folder'
+    required: false
+    default: ''
+  report_title:
+    description: 'Title for the coverage report'
+    required: false
+    default: 'Sky Platform'
+  sonar_exclusions:
+    description: 'Class filters for coverage report (comma separated)'
+    required: false
+    default: ''
+  run_number:
+    description: 'The github.run_number value'
+    required: true
+  run_id:
+    description: 'The github.run_id value'
+    required: true
+
+outputs:
+  has_tests:
+    description: 'Whether test projects were found (true/false)'
+    value: ${{ steps.check_tests.outputs.HAS_TESTS }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: 🔍 Verifica se existem projetos de teste
+      id: check_tests
+      shell: bash
+      run: |
+        if find . -type f \( -name '*Tests.csproj' -o -name '*Test.csproj' \) | grep -q .; then
+          echo "HAS_TESTS=true" >> "$GITHUB_OUTPUT"
+          echo -e "\033[0;32m✅ Projetos de teste encontrados."
+        else
+          echo "HAS_TESTS=false" >> "$GITHUB_OUTPUT"
+          echo -e "\033[0;33m⚠️ Nenhum projeto de teste encontrado."
+        fi
+
+    - name: 🛠️ Install dotnet-reportgenerator-globaltool and dotnet-coverage
+      if: ${{ steps.check_tests.outputs.HAS_TESTS == 'true' }}
+      shell: bash
+      run: |
+        dotnet tool install --global dotnet-reportgenerator-globaltool
+        dotnet tool install --global dotnet-coverage
+
+    - name: 🧪 Run tests and generate coverage
+      if: ${{ steps.check_tests.outputs.HAS_TESTS == 'true' }}
+      shell: bash
+      run: |
+        for proj in $(find ./${{ inputs.tests_dir }}/ -name '*.csproj'); do
+          echo "➡️ Rodando testes com cobertura para: $proj"
+          dotnet test $proj \
+              --verbosity Minimal \
+              --configuration Debug \
+              --collect:"XPlat Code Coverage"
+          index=$((index+1))
+        done
+
+        echo -e "\033[0;33m➡️ Gerando relatório HTML e Cobertura..."
+        reportgenerator \
+          -reports:"**/TestResults/**/coverage.cobertura.xml" \
+          -targetdir:"coveragereport" \
+          -reportTypes:"Cobertura;Html;MarkdownSummaryGithub;SonarQube" \
+          -title:${{ inputs.report_title }} \
+          -classfilters:"${{ inputs.sonar_exclusions || ' '}}" \
+          -filefilters:"-**/obj/**" \
+          -tag:'${{ inputs.run_number }}_${{ inputs.run_id }}'
+
+    - name: 🧪📤 Upload coverage report artifact
+      if: ${{ steps.check_tests.outputs.HAS_TESTS == 'true' }}
+      uses: actions/upload-artifact@v7
+      with:
+        name: Coverage-Report
+        path: coveragereport

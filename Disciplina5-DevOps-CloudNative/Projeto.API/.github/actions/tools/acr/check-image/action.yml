@@ -1,0 +1,51 @@
+name: Docker Check Image Exists
+description: Composite action to check if a Docker image already exists in a container registry
+
+inputs:
+  registry:
+    description: 'Container registry URL (e.g., ghcr.io, docker.io)'
+    required: false
+    default: 'ghcr.io'
+  registry_username:
+    description: 'Optional image namespace, such as a GitHub organization'
+    required: false
+    default: ''
+  image_name:
+    description: 'Full image name without registry prefix (e.g., deploy.myapp)'
+    required: true
+  tag_version:
+    description: 'Image tag to check'
+    required: true
+
+outputs:
+  IMAGE_EXISTS:
+    description: 'Whether the image already exists in the registry (true/false)'
+    value: ${{ steps.check_image.outputs.IMAGE_EXISTS }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: 🔍 Check if image exists
+      id: check_image
+      shell: bash
+      run: |
+        if [ -n "${{ inputs.registry_username }}" ]; then
+          IMAGE_REPOSITORY="${{ inputs.registry }}/${{ inputs.registry_username }}/${{ inputs.image_name }}"
+        else
+          IMAGE_REPOSITORY="${{ inputs.registry }}/${{ inputs.image_name }}"
+        fi
+        IMAGE_TAG="${IMAGE_REPOSITORY}:${{ inputs.tag_version }}"
+        echo "Checking existence of $IMAGE_TAG..."
+        if docker manifest inspect "$IMAGE_TAG" > /dev/null 2>&1; then
+          echo "✅ Image exists in registry"
+          echo "IMAGE_EXISTS=true" >> "$GITHUB_OUTPUT"
+          echo "## ✅ Image already exists" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Image \`$IMAGE_TAG\` already exists in the registry." >> "$GITHUB_STEP_SUMMARY"
+        else
+          echo "🔍 Image does not exist in registry"
+          echo "IMAGE_EXISTS=false" >> "$GITHUB_OUTPUT"
+          echo "## 🔍 Image not found" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Image \`$IMAGE_TAG\` does not exist. Proceeding with build and push." >> "$GITHUB_STEP_SUMMARY"
+        fi

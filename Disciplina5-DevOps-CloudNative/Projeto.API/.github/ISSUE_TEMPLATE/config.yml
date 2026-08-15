@@ -1,0 +1,16 @@
+# doc: https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/configuring-issue-templates-for-your-repository#configuring-the-template-chooser
+
+blank_issues_enabled: false
+
+contact_links:
+  - name: Dúvidas e discussões
+    url: https://github.com/highexpert-tecnologia/posgraduacao-arquiteturaazure-ai/discussions
+    about: Use as discussões para perguntas, ideias abertas ou conversas que ainda não são bugs ou features.
+
+  - name: Vulnerabilidade de segurança
+    url: https://github.com/highexpert-tecnologia/posgraduacao-arquiteturaazure-ai/security/policy
+    about: Não abra vulnerabilidades públicas como issue. Siga a política de segurança do projeto.
+
+  - name: Suporte da comunidade
+    url: https://github.com/highexpert-tecnologia/posgraduacao-arquiteturaazure-ai/blob/main/.github/SUPPORT.md
+    about: Veja os canais recomendados para suporte, dúvidas e contato.

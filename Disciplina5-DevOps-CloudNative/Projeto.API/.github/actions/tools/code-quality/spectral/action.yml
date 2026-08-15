@@ -1,0 +1,52 @@
+name: 'Spectral OpenAPI Lint'
+description: 'Runs Spectral lint with DevOps Linter and OWASP rulesets against OpenAPI specs and uploads results.'
+
+inputs:
+  openapi_files_path:
+    description: 'Path to the folder containing the OpenAPI JSON/YAML files to lint (e.g. ./output_build/open-api)'
+    required: true
+  node-version:
+    description: 'Node.js version'
+    required: false
+    default: '24'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: 🎗️ Setup Node.js ${{ inputs.node-version }}
+      uses: actions/setup-node@v7
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: 🎗️ Install Spectral
+      shell: bash
+      run: npm install -g @stoplight/spectral-cli
+
+    - name: 🎗️ Run Spectral Lint with DevOps Linter ruleset
+      shell: bash
+      continue-on-error: true
+      run: |
+        spectral lint \
+          "${{ inputs.openapi_files_path }}/*.json" \
+          --format stylish \
+          --format html \
+          --output.html spectral-devops-linter.html \
+          --ruleset https://raw.githubusercontent.com/connectedcircuits/devops-api-linter/main/rules.yaml
+
+    - name: 🎗️ Run Spectral Lint with OWASP ruleset
+      shell: bash
+      continue-on-error: true
+      run: |
+        spectral lint \
+          "${{ inputs.openapi_files_path }}/*.json" \
+          --format stylish \
+          --format html \
+          --output.html spectral-owasp.html \
+          --ruleset https://unpkg.com/@stoplight/spectral-owasp-ruleset
+
+    - name: 🎗️ 📤 Upload Spectral Lint Results
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v7
+      with:
+        name: Spectral-Results
+        path: spectral-*.html

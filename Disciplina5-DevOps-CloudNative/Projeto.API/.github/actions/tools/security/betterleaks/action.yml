@@ -1,0 +1,44 @@
+name: Betterleaks
+description: Composite action to scan the repository history for secrets using Betterleaks
+
+inputs:
+  report_path:
+    description: 'Path for the generated SARIF report'
+    required: false
+    default: 'betterleaks.sarif'
+  enable_upload_artifact:
+    description: 'Upload the SARIF report as a workflow artifact'
+    required: false
+    default: 'true'
+
+runs:
+  using: composite
+  steps:
+    - name: Install Betterleaks
+      shell: bash
+      run: |
+        archive="betterleaks_1.7.3_linux_x64.tar.gz"
+        curl --fail --location --silent --show-error \
+          --output "$RUNNER_TEMP/$archive" \
+          "https://github.com/betterleaks/betterleaks/releases/download/v1.7.3/$archive"
+        echo "9d2ed6fc387bc1c3f95557d5539077b1ce422f0db5ec38db5f14a141ad2947bf  $RUNNER_TEMP/$archive" | sha256sum --check
+        tar --extract --gzip --file "$RUNNER_TEMP/$archive" --directory "$RUNNER_TEMP"
+        install --mode 0755 "$RUNNER_TEMP/betterleaks" "$RUNNER_TEMP/betterleaks-bin"
+        echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+    - name: Scan Git history with Betterleaks
+      shell: bash
+      run: |
+        betterleaks-bin git . \
+          --platform github \
+          --redact \
+          --report-path "${{ inputs.report_path }}" \
+          --report-format sarif
+
+    - name: Upload Betterleaks report
+      if: ${{ always() && inputs.enable_upload_artifact == 'true' }}
+      uses: actions/upload-artifact@v7
+      with:
+        name: Betterleaks-Results
+        path: ${{ inputs.report_path }}
+        if-no-files-found: ignore

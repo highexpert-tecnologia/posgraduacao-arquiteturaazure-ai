@@ -1,0 +1,41 @@
+name: Check Tag Exists
+description: Composite action to check if a git tag already exists in the remote repository
+
+inputs:
+  tag:
+    description: 'Tag to check (without v prefix)'
+    required: true
+  fail_on_exists:
+    type: boolean
+    description: 'Whether to fail the action if the tag already exists'
+    required: false
+    default: true
+
+env:
+  # Colors for output
+  RED: '\033[0;31m'
+  GREEN: '\033[0;32m'
+  RESET: '\033[0m'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: 🔍 Check if tag already exists
+      id: check_tag
+      shell: bash
+      run: |
+        echo "TAG_NAME=v${{ inputs.tag }}"
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
+        git config --global user.name "github-actions[bot]"
+        git config --global am.keepcr true
+        if git rev-parse "refs/tags/${{ inputs.tag }}" >/dev/null 2>&1; then
+          if [ "${{ inputs.fail_on_exists }}" = "true" ]; then
+            echo "Tag ${{ inputs.tag }} already exists"
+            exit 1
+          else
+            echo "Tag ${{ inputs.tag }} already exists, but continuing"
+          fi
+        else
+          git tag -a ${{ inputs.tag }} -m "Release ${{ inputs.tag }} at $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+          git push origin ${{ inputs.tag }}
+        fi

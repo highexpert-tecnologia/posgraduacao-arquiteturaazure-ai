@@ -1,0 +1,67 @@
+name: 🪰 Bug Report
+description: Descobrimos um problema.
+title: "[Bug]: "
+labels: ["bug", "triage", "help wanted"]
+projects: [""]
+# assignees:
+#   - felipementel
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Obrigado por reservar um tempo para preencher este relatório de bug!
+  - type: input
+    id: contact
+    attributes:
+      label: Informações sobre contato
+      description: Como podemos entrar em contato com você se precisarmos de mais informações?
+      placeholder: ex. email@pos-graduacao.com
+    validations:
+      required: false
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: O que aconteceu?
+      description: O que você esperava que acontecesse?
+      placeholder: Diga aqui o que quer dividir com a gente
+      value: "Precisamos das informações com detalhes!"
+    validations:
+      required: true
+  - type: dropdown
+    id: version
+    attributes:
+      label: Tipo de API
+      description: What version of our software are you running?
+      options:
+        - Gratuita sem chave/api-key
+        - Gratuita com chave/api-key
+      default: 0
+    validations:
+      required: true
+  - type: dropdown
+    id: requestby
+    attributes:
+      label: Qual ferramenta utilizou para fazer o teste?
+      multiple: true
+      options:
+        - cURL
+        - Postman
+        - Insomnia
+        - Outro
+      default: 0
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Dados do log
+      description: Por favor, copie e cole qualquer saída de log relevante. Isso será formatado automaticamente em código, então não há necessidade de acentos graves.
+      render: shell
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Código de Conduta
+      description: Ao enviar este problema, você concorda em seguir nosso [Código de Conduta](https://github.com/felipementel/apis-hub-for-developers/blob/main/.github/CODE_OF_CONDUCT.md).
+      options:
+        - label: Concordo em seguir o Código de Conduta deste projeto
+          required: true

@@ -1,0 +1,250 @@
+name: Azure Container Apps Deploy
+description: Logs in to Azure, updates Container App image, polls for revision readiness and health endpoint
+
+inputs:
+  azure_client_id:
+    description: 'Azure Client ID for OIDC authentication'
+    required: true
+  azure_tenant_id:
+    description: 'Azure Tenant ID for OIDC authentication'
+    required: true
+  azure_subscription_id:
+    description: 'Azure Subscription ID for OIDC authentication'
+    required: true
+  aca_name:
+    description: 'Azure Container App name'
+    required: true
+  rg_name:
+    description: 'Azure Resource Group name'
+    required: true
+  image:
+    description: 'Full image reference to deploy (e.g. ghcr.io/org/app:1.0.0)'
+    required: true
+  registry_server:
+    description: 'Container registry server to configure (e.g. myacr.azurecr.io)'
+    required: true
+  registry_identity:
+    description: 'Managed identity resource ID used by Container Apps to pull from the registry'
+    required: true
+  health_check_path:
+    description: 'HTTP path for post-deploy health check (e.g. /health/live)'
+    required: false
+    default: '/health/live'
+  poll_max_attempts:
+    description: 'Maximum number of polling attempts for revision readiness and health check'
+    required: false
+    default: '20'
+  poll_interval_seconds:
+    description: 'Seconds to wait between polling attempts'
+    required: false
+    default: '15'
+
+outputs:
+  FQDN:
+    description: 'Container App FQDN after deploy'
+    value: ${{ steps.aca_details.outputs.FQDN }}
+  STATE:
+    description: 'Container App running status after deploy'
+    value: ${{ steps.aca_details.outputs.STATE }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: 🔐 Azure CLI Login
+      uses: azure/login@v3
+      with:
+        client-id: ${{ inputs.azure_client_id }}
+        tenant-id: ${{ inputs.azure_tenant_id }}
+        subscription-id: ${{ inputs.azure_subscription_id }}
+
+    - name: 🔑 Configure registry managed identity
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        REGISTRY_SERVER="${{ inputs.registry_server }}"
+        IDENTITY_ID="${{ inputs.registry_identity }}"
+
+        if [ -z "${REGISTRY_SERVER}" ] || [ -z "${IDENTITY_ID}" ]; then
+          echo "❌ registry_server and registry_identity are required"
+          exit 1
+        fi
+
+        az identity show \
+          --ids "${IDENTITY_ID}" \
+          --only-show-errors \
+          --output none
+
+        az containerapp identity assign \
+          --name "${{ inputs.aca_name }}" \
+          --resource-group "${{ inputs.rg_name }}" \
+          --user-assigned "${IDENTITY_ID}" \
+          --only-show-errors \
+          --output none
+
+        ASSIGNED_IDENTITIES=$(az containerapp identity show \
+          --name "${{ inputs.aca_name }}" \
+          --resource-group "${{ inputs.rg_name }}" \
+          --query "userAssignedIdentities | keys(@)" \
+          --output tsv)
+
+        if ! grep -Fxiq "${IDENTITY_ID}" <<< "${ASSIGNED_IDENTITIES}"; then
+          echo "❌ Managed identity was not assigned to the Container App"
+          echo "Expected: ${IDENTITY_ID}"
+          echo "Assigned: ${ASSIGNED_IDENTITIES:-none}"
+          exit 1
+        fi
+
+        az containerapp registry set \
+          --name "${{ inputs.aca_name }}" \
+          --resource-group "${{ inputs.rg_name }}" \
+          --server "${REGISTRY_SERVER}" \
+          --identity "${IDENTITY_ID}" \
+          --only-show-errors \
+          --output none
+
+        REGISTRY_IDENTITY=$(az containerapp registry list \
+          --name "${{ inputs.aca_name }}" \
+          --resource-group "${{ inputs.rg_name }}" \
+          --query "[?server=='${REGISTRY_SERVER}'].identity | [0]" \
+          --output tsv)
+
+        if [ "${REGISTRY_IDENTITY,,}" != "${IDENTITY_ID,,}" ]; then
+          echo "❌ ACR was not configured with the expected managed identity"
+          echo "Expected: ${IDENTITY_ID}"
+          echo "Configured: ${REGISTRY_IDENTITY:-none}"
+          exit 1
+        fi
+
+        echo "✅ Managed identity and ACR registry configuration verified"
+
+    - name: 🚀 Update Azure Container App image
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "Updating image for: ${{ inputs.aca_name }} in RG: ${{ inputs.rg_name }}"
+        echo "Image: ${{ inputs.image }}"
+
+        az containerapp update \
+          --name "${{ inputs.aca_name }}" \
+          --resource-group "${{ inputs.rg_name }}" \
+          --set-env-vars ASPNETCORE_HTTP_PORTS=8080 \
+          --image "${{ inputs.image }}"
+
+    - name: ⏱️ Wait for new revision with expected image
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        EXPECTED_IMAGE="${{ inputs.image }}"
+        MAX_ATTEMPTS="${{ inputs.poll_max_attempts }}"
+        INTERVAL="${{ inputs.poll_interval_seconds }}"
+
+        echo "Expected image: ${EXPECTED_IMAGE}"
+        echo "Polling for revision readiness (attempts=${MAX_ATTEMPTS}, interval=${INTERVAL}s)"
+
+        for attempt in $(seq 1 "${MAX_ATTEMPTS}"); do
+          RUNNING_STATUS=$(az containerapp show \
+            --name "${{ inputs.aca_name }}" \
+            --resource-group "${{ inputs.rg_name }}" \
+            --query "properties.runningStatus" \
+            --output tsv 2>/dev/null || true)
+
+          LATEST_REV=$(az containerapp show \
+            --name "${{ inputs.aca_name }}" \
+            --resource-group "${{ inputs.rg_name }}" \
+            --query "properties.latestRevisionName" \
+            --output tsv 2>/dev/null || true)
+
+          READY_REV=$(az containerapp show \
+            --name "${{ inputs.aca_name }}" \
+            --resource-group "${{ inputs.rg_name }}" \
+            --query "properties.latestReadyRevisionName" \
+            --output tsv 2>/dev/null || true)
+
+          READY_IMAGE=""
+          if [ -n "${READY_REV}" ] && [ "${READY_REV}" != "None" ]; then
+            READY_IMAGE=$(az containerapp revision list \
+              --name "${{ inputs.aca_name }}" \
+              --resource-group "${{ inputs.rg_name }}" \
+              --query "[?name=='${READY_REV}'].properties.template.containers[0].image | [0]" \
+              --output tsv 2>/dev/null || true)
+          fi
+
+          echo "Attempt ${attempt}/${MAX_ATTEMPTS} => running=${RUNNING_STATUS} latest=${LATEST_REV} ready=${READY_REV} readyImage=${READY_IMAGE}"
+
+          if [ "${RUNNING_STATUS}" = "Running" ] \
+            && [ -n "${LATEST_REV}" ] \
+            && [ "${LATEST_REV}" = "${READY_REV}" ] \
+            && [ "${READY_IMAGE}" = "${EXPECTED_IMAGE}" ]; then
+            echo "✅ Revision is ready and running expected image"
+            break
+          fi
+
+          if [ "${attempt}" -eq "${MAX_ATTEMPTS}" ]; then
+            echo "❌ Timed out waiting for revision to become ready with expected image"
+            echo "Diagnostics:"
+            az containerapp revision list \
+              --name "${{ inputs.aca_name }}" \
+              --resource-group "${{ inputs.rg_name }}" \
+              --query "[].{name:name,active:properties.active,createdTime:properties.createdTime,provisioningState:properties.provisioningState,runningState:properties.runningState,image:properties.template.containers[0].image}" \
+              --output table || true
+            exit 1
+          fi
+
+          sleep "${INTERVAL}"
+        done
+
+    - name: 🌐 Poll app endpoint after deploy
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        FQDN=$(az containerapp show \
+          --name "${{ inputs.aca_name }}" \
+          --resource-group "${{ inputs.rg_name }}" \
+          --query "properties.configuration.ingress.fqdn" \
+          --output tsv)
+
+        HEALTH_PATH="${{ inputs.health_check_path }}"
+        MAX_ATTEMPTS="${{ inputs.poll_max_attempts }}"
+        INTERVAL="${{ inputs.poll_interval_seconds }}"
+        URL="https://${FQDN}${HEALTH_PATH}"
+
+        echo "Polling URL: ${URL}"
+
+        for attempt in $(seq 1 "${MAX_ATTEMPTS}"); do
+          HTTP_CODE=$(curl -k -sS -o /dev/null -w "%{http_code}" "${URL}" || echo "000")
+          echo "Attempt ${attempt}/${MAX_ATTEMPTS} => HTTP ${HTTP_CODE}"
+
+          if [[ "${HTTP_CODE}" =~ ^2[0-9][0-9]$|^3[0-9][0-9]$|^401$|^403$|^404$ ]]; then
+            echo "✅ Endpoint responded (HTTP ${HTTP_CODE})"
+            break
+          fi
+
+          if [ "${attempt}" -eq "${MAX_ATTEMPTS}" ]; then
+            echo "❌ Endpoint did not become reachable in time"
+            exit 1
+          fi
+
+          sleep "${INTERVAL}"
+        done
+
+    - name: 📊 Collect Container App details
+      id: aca_details
+      shell: bash
+      run: |
+        FQDN=$(az containerapp show \
+          --name "${{ inputs.aca_name }}" \
+          --resource-group "${{ inputs.rg_name }}" \
+          --query "properties.configuration.ingress.fqdn" \
+          --output tsv)
+
+        STATE=$(az containerapp show \
+          --name "${{ inputs.aca_name }}" \
+          --resource-group "${{ inputs.rg_name }}" \
+          --query "properties.runningStatus" \
+          --output tsv)
+
+        echo "FQDN=$FQDN" >> "$GITHUB_OUTPUT"
+        echo "STATE=$STATE" >> "$GITHUB_OUTPUT"

@@ -1,0 +1,31 @@
+Projeto.API3/
+
+# Credenciais e variáveis sensíveis
+*.tfvars
+!*.tfvars.example
+
+.terraform.tfstate.lock.info
+
+# Arquivos locais de automação
+scripts/*.local.ps1
+
+
+# Diretório de plugins e módulos do Terraform
+.terraform/
+
+# Arquivos de estado
+*.tfstate
+*.tfstate.backup
+
+# Lock file (opcional — remova o ! se quiser versionar)
+.terraform.lock.hcl
+
+# Logs de crash
+crash.log
+crash.*.log
+
+# Arquivos de override
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json

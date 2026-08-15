@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+	<PropertyGroup>
+		<TargetFramework>net10.0</TargetFramework>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
+		<DockerfileContext>..\..</DockerfileContext>
+		<VersionPrefix>rc</VersionPrefix>
+		<Version>0.2.6</Version>
+		<VersionSuffix>alfa</VersionSuffix>
+
+	    <!-- Habilita geração do OpenAPI durante o build -->
+	    <OpenApiGenerateDocuments>true</OpenApiGenerateDocuments>
+	    <OpenApiGenerateDocumentsOnBuild>true</OpenApiGenerateDocumentsOnBuild>
+
+	    <!-- Onde o arquivo será gerado -->
+	    <OpenApiDocumentsDirectory>../../output_build/open-api</OpenApiDocumentsDirectory>
+
+	    <!-- Nome do arquivo gerado: openapi.json -->
+	    <OpenApiGenerateDocumentsOptions>--file-name openapi</OpenApiGenerateDocumentsOptions>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Azure.Monitor.OpenTelemetry.AspNetCore" Version="1.6.0" />
+		<PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.10">
+			<PrivateAssets>all</PrivateAssets>
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+		</PackageReference>
+		<PackageReference Include="Microsoft.VisualStudio.Azure.Containers.Tools.Targets" Version="1.23.0" />
+		<PackageReference Include="Swashbuckle.AspNetCore" Version="10.2.3" />
+	    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.10" />
+	    <PackageReference Include="Microsoft.Extensions.ApiDescription.Server" Version="10.0.10">
+	      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+	      <PrivateAssets>all</PrivateAssets>
+	    </PackageReference>
+		<PackageReference Include="Scalar.AspNetCore" Version="2.16.17" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\Usuarios.Adapters\Usuarios.Adapters.csproj" />
+		<ProjectReference Include="..\Usuarios.Application\Usuarios.Application.csproj" />
+	</ItemGroup>
+
+</Project>

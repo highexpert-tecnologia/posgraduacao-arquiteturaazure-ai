@@ -1,0 +1,17 @@
+env_abrev_dash  = "-dev"
+rg_location     = "Brazil South"
+github_username = "felipementel"
+github_owner_id = 14238257
+
+sqbdb_users_max_size_gb = 2
+sqbdb_users_sku_name    = "Basic"
+
+sonar_organization     = "felipementel"
+sonar_project_key      = "felipementel_High_Expert"
+sonar_project_name     = "High Expert"
+sonar_token            = "sonar_uat_abc123"
+otlp_honeycomb_headers =  "123"
+
+##########
+# Para obter o valor do github_owner_id, acesse a URL: https://api.github.com/users/<github_username> e copie o valor do campo "id" do JSON retornado.
+# ou execute o comando: gh api user --jq .id

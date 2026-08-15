@@ -1,0 +1,39 @@
+name: OWASP ZAP Baseline Scan
+description: run OWASP ZAP Baseline Scan against the production URL to identify potential security vulnerabilities in the web application.
+
+inputs:
+  url:
+    description: 'The URL of the application to scan (e.g. https://example.com)'
+    required: true
+  allow_issue_writing:
+    description: 'Allow writing issues to the ZAP report (true/false)'
+    required: false
+    default: 'true'
+  fail_action:
+    description: 'Fail the action if vulnerabilities are found (true/false)'
+    required: false
+    default: 'false'
+  cmd_options:
+    description: 'Additional command options for the ZAP baseline scan (e.g. -a for active scan)'
+    required: false
+    default: ''
+  artifact_name:
+    description: 'Name of the artifact to store the ZAP report (e.g. zap_report)'
+    required: false
+    default: 'zap_report'
+
+runs:
+  using: 'composite'
+  steps:
+    - run: echo -e ${GREEN} "Running OWASP ZAP..."
+      shell: bash
+
+    # DAST/passive scan no site publicado
+    - name: 🕷️ OWASP ZAP Baseline
+      uses: zaproxy/action-baseline@v0.15.0
+      with:
+        target: ${{ inputs.url }}
+        allow_issue_writing: ${{ inputs.allow_issue_writing }}
+        fail_action: ${{ inputs.fail_action }}
+        cmd_options: ${{ inputs.cmd_options }}
+        artifact_name: ${{ inputs.artifact_name }}

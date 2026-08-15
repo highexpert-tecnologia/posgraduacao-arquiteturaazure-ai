@@ -1,0 +1,109 @@
+name: 🚀 Nova Funcionalidade
+description: Solicitação de nova funcionalidade ou melhoria.
+title: "[Feature]: "
+labels: ["feature", "triage"]
+# assignees:
+#   - felipementel
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Obrigado por sugerir uma nova funcionalidade! 🚀  
+        Quanto mais detalhes você fornecer, melhor conseguiremos avaliar e priorizar.
+
+  - type: input
+    id: contact
+    attributes:
+      label: Contato
+      description: Como podemos entrar em contato para mais informações?
+      placeholder: ex. email@empresa.com
+    validations:
+      required: false
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problema / Contexto
+      description: Qual problema você está tentando resolver?
+      placeholder: Descreva a dor atual ou limitação do sistema
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Solução proposta
+      description: Como você imagina que a funcionalidade deveria funcionar?
+      placeholder: Descreva o comportamento esperado
+    validations:
+      required: true
+
+  - type: textarea
+    id: business-value
+    attributes:
+      label: Valor de negócio
+      description: Qual o benefício dessa funcionalidade?
+      placeholder: Ex. ganho de produtividade, redução de erros, melhoria de experiência…
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Critérios de aceitação
+      description: O que precisa acontecer para considerarmos essa feature pronta?
+      placeholder: |
+        Exemplo:
+        - Usuário consegue cadastrar X
+        - API retorna status 200
+        - Dados persistidos corretamente
+    validations:
+      required: false
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Prioridade
+      description: Qual o nível de urgência?
+      options:
+        - Baixa
+        - Média
+        - Alta
+        - Crítica
+      default: 1
+    validations:
+      required: true
+
+  - type: dropdown
+    id: usage
+    attributes:
+      label: Tipo de uso
+      description: Onde essa funcionalidade será utilizada?
+      multiple: true
+      options:
+        - API
+        - Frontend
+        - Backoffice
+        - Integração
+        - Outro
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Contexto adicional
+      description: Adicione qualquer outra informação relevante
+      placeholder: Links, prints, documentação, exemplos…
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Código de Conduta
+      description: Ao enviar esta solicitação, você concorda em seguir nosso Código de Conduta.
+      options:
+        - label: Concordo em seguir o Código de Conduta
+          required: true

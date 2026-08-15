@@ -1,0 +1,78 @@
+name: .NET API — CI/CD Pipeline
+run-name: "${{ github.actor }} - ${{ github.run_id }}"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+  workflow_dispatch:
+    inputs:
+      buildMode:
+        description: "Qual ação deseja fazer?"
+        required: true
+        default: 'Build'
+        type: choice
+        options:
+          - Build
+          - Build + Tag Validation
+          - Build + Tag Validation + Deploy
+      environments:
+        description: "Selecione o ambiente de implantação"
+        required: true
+        default: 'development'
+        type: environment
+
+jobs:
+  build:
+    name: DevSecOps Pipeline
+    uses: ./.github/workflows/dotnet-sandbox-api-build.yml
+    with:
+      build_mode: ${{ github.event_name == 'workflow_dispatch' && inputs.buildMode || 'Build' }}
+      environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environments || 'development' }}
+      dotnet_version: '10.x'
+      project_base_dir: ./src
+      solution_file_name: 'UsuariosApi.slnx'
+      main_project: 'Usuarios.Api'
+      tests_dir: 'tests'
+      report_title: 'Pos-Graduacao'
+      sonar_exclusions: ''
+      image_name: 'usuariosapi'
+      openapi_dir: 'open-api'
+      dockerfile_dir: './docker'
+      docker_build_context: '.'
+      docker_setup: true
+      registry: ${{ vars.AZURE_ACR_REGISTRY }}
+    permissions:
+      security-events: write
+      contents: write
+      id-token: write
+      packages: write
+    secrets:
+      SONAR_PROJECT_KEY: ${{ secrets.SONAR_PROJECT_KEY }}
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+  deploy:
+    name: Deploy to Azure Container Apps
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.buildMode == 'Build + Tag Validation + Deploy' && needs.build.outputs.image_exists == 'false' }}
+    needs: [build]
+    uses: ./.github/workflows/dotnet-sandbox-api-deploy-aca.yml
+    permissions:
+      id-token: write
+      contents: read
+      packages: read
+    with:
+      environment: ${{ inputs.environments || 'development' }}
+      tag_version: ${{ needs.build.outputs.tag_version }}
+      image_name: 'usuariosapi'
+      registry: ${{ vars.AZURE_ACR_REGISTRY }}
+      registry_identity: ${{ vars.AZURE_ACR_PULL_IDENTITY_ID }}
+      acae_base_name: ${{ vars.AZURE_ACAE_BASE }}
+      health_check_path: '/health/live'
+    secrets:
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}

@@ -1,0 +1,44 @@
+name: Docker Push
+description: Composite action to push Docker images to a container registry
+
+inputs:
+  registry:
+    description: 'Container registry URL (e.g., ghcr.io, docker.io)'
+    required: true
+  registry_username:
+    description: 'Username or namespace in the registry path'
+    required: false
+    default: ''
+  image_name:
+    description: 'Docker image name (without registry prefix)'
+    required: true
+  tag_version:
+    description: 'Version tag for the image'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Define image repository
+      shell: bash
+      run: |
+        if [ -n "${{ inputs.registry_username }}" ]; then
+          IMAGE_REPOSITORY="${{ inputs.registry }}/${{ inputs.registry_username }}/${{ inputs.image_name }}"
+        else
+          IMAGE_REPOSITORY="${{ inputs.registry }}/${{ inputs.image_name }}"
+        fi
+        echo "IMAGE_REPOSITORY=$IMAGE_REPOSITORY" >> "$GITHUB_ENV"
+
+    - name: 🐳 Docker push
+      shell: bash
+      run: |
+        docker push ${{ env.IMAGE_REPOSITORY }}:${{ inputs.tag_version }}
+
+    - name: 📊 Summary
+      shell: bash
+      run: |
+        echo "### 🐳 Docker Push" >> "$GITHUB_STEP_SUMMARY"
+        echo "" >> "$GITHUB_STEP_SUMMARY"
+        echo "- **Registry:** \`${{ inputs.registry }}\`" >> "$GITHUB_STEP_SUMMARY"
+        echo "- **Image:** \`${{ env.IMAGE_REPOSITORY }}\`" >> "$GITHUB_STEP_SUMMARY"
+        echo "- **Tags:** \`latest\`, \`${{ inputs.tag_version }}\`" >> "$GITHUB_STEP_SUMMARY"

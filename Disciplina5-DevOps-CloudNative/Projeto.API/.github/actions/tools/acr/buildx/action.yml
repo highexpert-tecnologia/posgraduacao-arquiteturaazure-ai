@@ -1,0 +1,87 @@
+name: Docker Buildx Build
+description: Composite action to build Docker images using buildx (supports multi-platform and tar export)
+
+inputs:
+  registry:
+    description: 'Container registry URL (e.g., ghcr.io, docker.io)'
+    required: false
+    default: 'ghcr.io'
+  registry_username:
+    description: 'Optional image namespace, such as a GitHub organization'
+    required: false
+    default: ''
+  image_name:
+    description: 'Docker image name (without registry prefix)'
+    required: true
+  tag_version:
+    description: 'Version tag for the image'
+    required: true
+  dockerfile:
+    description: 'Path to the Dockerfile'
+    required: true
+  context:
+    description: 'Docker build context'
+    required: false
+    default: '.'
+  platforms:
+    description: 'Target platforms for build (comma-separated)'
+    required: false
+    default: 'linux/amd64'
+  push:
+    description: 'Push the built image to the registry'
+    required: false
+    default: 'false'
+  load:
+    description: 'Load the built image into the local Docker daemon'
+    required: false
+    default: 'true'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Define image repository
+      shell: bash
+      run: |
+        IMAGE_REPOSITORY="${{ inputs.registry }}/${{ inputs.image_name }}"
+        echo "IMAGE_REPOSITORY=$IMAGE_REPOSITORY" >> "$GITHUB_ENV"
+
+    - name: 🐳 Extract metadata (tags, labels) for Docker
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: |
+          ${{ env.IMAGE_REPOSITORY }}
+
+    - name: 🐳 Build Docker image
+      shell: bash
+      run: |
+        echo "Building Docker image for repository: ${{ env.IMAGE_REPOSITORY }}"
+        OUTPUT_FLAGS=()
+        if [ "${{ inputs.push }}" = "true" ]; then
+          OUTPUT_FLAGS+=(--push)
+        fi
+        if [ "${{ inputs.load }}" = "true" ]; then
+          OUTPUT_FLAGS+=(--load)
+        fi
+
+        docker buildx build \
+          -f ${{ inputs.dockerfile }} \
+          -t ${{ env.IMAGE_REPOSITORY }}:${{ inputs.tag_version }} \
+          --platform ${{ inputs.platforms }} \
+          "${OUTPUT_FLAGS[@]}" \
+          ${{ inputs.context }}
+
+        if [ "${{ inputs.push }}" = "true" ]; then
+          docker buildx imagetools inspect \
+            ${{ env.IMAGE_REPOSITORY }}:${{ inputs.tag_version }} >/dev/null
+        fi
+
+    - name: 📊 Summary
+      shell: bash
+      run: |
+        echo "### 🐳 Docker Build" >> "$GITHUB_STEP_SUMMARY"
+        echo "" >> "$GITHUB_STEP_SUMMARY"
+        echo "- **Image:** \`$IMAGE_REPOSITORY\`" >> "$GITHUB_STEP_SUMMARY"
+        echo "- **Tags:** \`latest\`, \`${{ inputs.tag_version }}\`" >> "$GITHUB_STEP_SUMMARY"
+        echo "- **Dockerfile:** \`${{ inputs.dockerfile }}\`" >> "$GITHUB_STEP_SUMMARY"
+        echo "- **Platforms:** \`${{ inputs.platforms }}\`" >> "$GITHUB_STEP_SUMMARY"

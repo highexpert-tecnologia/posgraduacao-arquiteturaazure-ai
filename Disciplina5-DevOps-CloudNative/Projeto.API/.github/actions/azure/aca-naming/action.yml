@@ -1,0 +1,91 @@
+name: Azure Container Apps Naming
+description: Computes Azure Container Apps resource names (ACA, ACAE, RG) from repo name and environment
+
+inputs:
+  environment:
+    description: 'Deployment environment (development, staging, production)'
+    required: true
+  azure_resource_group:
+    description: 'Base resource group name (env suffix will be appended for non-prd)'
+    required: true
+  acae_base_name:
+    description: 'Base Container App Environment name (e.g. cae-myorg)'
+    required: true
+  repo_name:
+    description: 'Repository name used to derive the app slug'
+    required: false
+    default: ''
+
+outputs:
+  AZURE_ACA_NAME:
+    description: 'Azure Container App name'
+    value: ${{ steps.naming.outputs.AZURE_ACA_NAME }}
+  AZURE_ACAE_NAME:
+    description: 'Azure Container App Environment name'
+    value: ${{ steps.naming.outputs.AZURE_ACAE_NAME }}
+  AZURE_RG_NAME:
+    description: 'Azure Resource Group name'
+    value: ${{ steps.naming.outputs.AZURE_RG_NAME }}
+  ENV_SUFFIX:
+    description: 'Normalized environment suffix (dev, hom, prd)'
+    value: ${{ steps.naming.outputs.ENV_SUFFIX }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: 🧾 Compute Azure Container Apps names
+      id: naming
+      shell: bash
+      run: |
+        REPO_NAME="${{ inputs.repo_name }}"
+        ENV_INPUT="$(echo "${{ inputs.environment }}" | tr '[:upper:]' '[:lower:]')"
+
+        case "$ENV_INPUT" in
+          dev|development)
+            ENV_SUFFIX="dev"
+            ;;
+          hml|homolog|homologacao|staging)
+            ENV_SUFFIX="hom"
+            ;;
+          prd|prod|production)
+            ENV_SUFFIX="prd"
+            ;;
+          *)
+            ENV_SUFFIX="$ENV_INPUT"
+            ;;
+        esac
+
+        # repo slug: lowercase, keep [a-z0-9-]
+        SLUG="$(echo "$REPO_NAME" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9-]+/-/g; s/^-+//; s/-+$//')"
+
+        # strip common prefixes/suffixes to get a short app name
+        APP="$SLUG"
+        APP="$(echo "$APP" | sed -E 's/^gn-api-//; s/^gn-//; s/-service$//; s/-api$//')"
+        APP="$(echo "$APP" | sed -E 's/^-+//; s/-+$//')"
+
+        RG_BASE="${{ inputs.azure_resource_group }}"
+        ACAE_BASE="${{ inputs.acae_base_name }}"
+
+        if [ "$ENV_SUFFIX" = "prd" ]; then
+          ACA_NAME="ca-${APP}"
+          ACAE_NAME="${ACAE_BASE}"
+          RG_NAME="$RG_BASE"
+        else
+          ACA_NAME="ca-${APP}-${ENV_SUFFIX}"
+          ACAE_NAME="${ACAE_BASE}-${ENV_SUFFIX}"
+          RG_NAME="${RG_BASE}-${ENV_SUFFIX}"
+        fi
+
+        echo "AZURE_ACA_NAME=$ACA_NAME" >> "$GITHUB_OUTPUT"
+        echo "AZURE_ACAE_NAME=$ACAE_NAME" >> "$GITHUB_OUTPUT"
+        echo "AZURE_RG_NAME=$RG_NAME" >> "$GITHUB_OUTPUT"
+        echo "ENV_SUFFIX=$ENV_SUFFIX" >> "$GITHUB_OUTPUT"
+
+        echo "### 🧾 Azure Resource Names" >> "$GITHUB_STEP_SUMMARY"
+        echo "" >> "$GITHUB_STEP_SUMMARY"
+        echo "| Resource | Name |" >> "$GITHUB_STEP_SUMMARY"
+        echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+        echo "| Container App | \`$ACA_NAME\` |" >> "$GITHUB_STEP_SUMMARY"
+        echo "| Container App Environment | \`$ACAE_NAME\` |" >> "$GITHUB_STEP_SUMMARY"
+        echo "| Resource Group | \`$RG_NAME\` |" >> "$GITHUB_STEP_SUMMARY"
+        echo "| Environment suffix | \`$ENV_SUFFIX\` |" >> "$GITHUB_STEP_SUMMARY"
