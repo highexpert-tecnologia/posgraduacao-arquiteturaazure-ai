@@ -218,7 +218,7 @@ Pronto, agora você já pode executar o Docker e o Docker Compose no WSL2.
 Crie um diretório local para o projeto e clone o repositório:
 
 ```powershell
-git clone https://github.com/felipementel/Terraform-Pos.git
+git clone https://github.com/highexpert-tecnologia/posgraduacao-arquiteturaazure-ai.git
 ```
 
 Agora entre na pasta do projeto:
