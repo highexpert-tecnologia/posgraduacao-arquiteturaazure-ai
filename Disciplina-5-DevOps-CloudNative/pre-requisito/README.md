@@ -51,7 +51,7 @@ $scriptPath = Join-Path $env:TEMP "PowerShell-7.6.4-win-x64.msi"; curl.exe -L -o
 Passo 3: Abra o PowerShell Core e execute o seguinte comando para baixar e executar o script de preparação do ambiente:
 
 ```powershell
-winget search Git.Git; $scriptPath = Join-Path $env:TEMP "terraform-pos-env.ps1"; curl.exe -L -o $scriptPath "https://raw.githubusercontent.com/highexpert-tecnologia/posgraduacao-arquiteturaazure-ai/refs/heads/main/pre-requisito/terraform-pos-env.ps1"; if ($LASTEXITCODE -eq 0) { pwsh -ExecutionPolicy Bypass -File $scriptPath }
+winget search Git.Git; $scriptPath = Join-Path $env:TEMP "terraform-pos-env.ps1"; curl.exe -L -o $scriptPath "https://raw.githubusercontent.com/highexpert-tecnologia/posgraduacao-arquiteturaazure-ai/refs/heads/main/Disciplina-5-DevOps-CloudNative/pre-requisito/terraform-pos-env.ps1"; if ($LASTEXITCODE -eq 0) { pwsh -ExecutionPolicy Bypass -File $scriptPath }
 ```
 
 ## Validação
