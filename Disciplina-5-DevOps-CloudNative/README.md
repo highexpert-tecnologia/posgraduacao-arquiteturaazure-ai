@@ -253,7 +253,30 @@ Essa operação exige permissões administrativas compatíveis com as atribuiç�
 Copy-Item .\IaC\credential.tfvars.example .\IaC\credential.tfvars
 ```
 
-### 2. Variáveis do ambiente
+### 2. Autenticação no GitHub
+
+O provider GitHub utiliza a variável de ambiente `GITHUB_TOKEN`. A conta autenticada deve ser proprietária do repositório ou possuir permissão administrativa. Para que `terraform destroy` exclua o repositório, o token também precisa permitir sua exclusão.
+
+Com um personal access token clássico, habilite o escopo `delete_repo`. Com um fine-grained personal access token, conceda acesso ao repositório e a permissão `Administration: Read and write`.
+
+Usando o GitHub CLI, selecione a conta correta, autorize o escopo de exclusão e exporte o token somente para a sessão atual:
+
+```powershell
+gh auth switch --user "<github-username>"
+gh auth refresh --hostname github.com --scopes delete_repo
+$env:GITHUB_TOKEN = gh auth token
+```
+
+Valide a identidade e a permissão administrativa antes de executar o Terraform:
+
+```powershell
+gh api user --jq .login
+gh api repos/<github-owner>/<repository-name> --jq .permissions.admin
+```
+
+O segundo comando deve retornar `true`. O valor de `github_username` em `IaC/environments/dev.tfvars` deve corresponder ao proprietário do repositório.
+
+### 3. Variáveis do ambiente
 Crie o arquivo do ambiente de desenvolvimento:
 
 ```powershell
@@ -346,6 +369,20 @@ terraform -chdir="IaC" output -raw sql_username
 
 ## Destruir a infraestrutura
 Para remover os recursos gerenciados no workspace selecionado:
+
+> [!IMPORTANT]
+> Execute o destroy com o mesmo state usado no provisionamento. Atualmente o projeto utiliza state local; apenas clonar o repositório em outra máquina não recupera esse state. Copie com segurança o diretório local `IaC/terraform.tfstate.d` da máquina que executou o apply ou migre o projeto para um backend remoto antes do provisionamento.
+
+Confirme o workspace, a conta GitHub e a permissão no repositório:
+
+```powershell
+terraform -chdir="IaC" workspace select dev
+terraform -chdir="IaC" workspace show
+gh api user --jq .login
+gh api repos/<github-owner>/<repository-name> --jq .permissions.admin
+```
+
+Em seguida, execute:
 
 ```powershell
 terraform -chdir="IaC" destroy `

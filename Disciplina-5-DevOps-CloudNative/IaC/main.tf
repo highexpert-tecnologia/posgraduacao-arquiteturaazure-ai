@@ -23,7 +23,9 @@ provider "github" {
 provider "azurerm" {
   # Configuration options
   features {
-
+    resource_group {
+      prevent_deletion_if_contains_resources = false
+    }
   }
   client_id       = var.arm_client_id
   client_secret   = var.arm_client_secret
